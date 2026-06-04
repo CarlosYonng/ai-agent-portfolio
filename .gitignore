@@ -1,0 +1,27 @@
+# 本地环境变量不能提交，里面可能包含模型 API Key。
+.env
+.env.local
+
+# Java 构建产物。
+backend-java/target/
+.m2/
+
+# 前端依赖和构建产物。
+frontend/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+
+# Python 缓存文件。
+.venv/
+ai-service/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Docker 和运行时临时文件。
+logs/
+*.log.tmp
+.DS_Store
+
+# IDE 本地配置。
+.vscode/

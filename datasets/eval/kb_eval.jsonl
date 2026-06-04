@@ -1,0 +1,3 @@
+{"id":"kb_001","question":"PAY_5001是什么意思，应该怎么处理？","gold_doc_ids":["payment_callback"],"gold_answer":"支付回调签名校验失败，需检查密钥、sign字段、请求体编码和回调环境。"}
+{"id":"kb_002","question":"订单创建接口 couponId 是必填吗？","gold_doc_ids":["order_api"],"gold_answer":"couponId 是可选字段，没有优惠券时可以不传。"}
+

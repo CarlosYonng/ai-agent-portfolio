@@ -1,0 +1,13 @@
+# AI 服务依赖。
+# 第一版只放轻量依赖，保证你能尽快跑起来；后续再补 langgraph、qdrant-client、neo4j 等。
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.2
+pydantic-settings==2.6.1
+httpx==0.28.0
+pymysql==1.1.1
+python-dotenv==1.0.1
+cryptography==45.0.4
+
+# 单元测试依赖。pytest 足够覆盖 Agent 编排、检索兜底和工具函数。
+pytest==8.3.4
