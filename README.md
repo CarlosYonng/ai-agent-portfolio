@@ -1,6 +1,6 @@
 # AI Agent Portfolio
 
-这是一个面向求职展示的双项目 monorepo，目标是把你的 Java 后端经验和大模型 Agent/RAG 工程能力合在一起。
+这是一个把 Java 后端经验和大模型 Agent/RAG 工程能力合在一起项目。
 
 ## 项目组成
 
