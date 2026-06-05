@@ -3,3 +3,5 @@
 scripts、ai-service 和 mcp-server 都可以复用这里的轻量工具。
 """
 
+__version__ = "1.0.0"
+

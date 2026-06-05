@@ -7,20 +7,21 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app import __version__ as app_version
 from app.agents.incident_agents import run_incident_agent
 from app.agents.rag_agents import run_rag_agent
 from app.schemas.chat import AgentAskRequest, AgentAskResponse
 from app.schemas.incident import IncidentDiagnoseRequest, IncidentDiagnoseResponse
 
 
-app = FastAPI(title="AI Agent Service", version="0.1.0")
+app = FastAPI(title="AI Agent Service", version=app_version)
 
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     """健康检查接口。"""
 
-    return {"status": "UP", "service": "ai-service"}
+    return {"status": "UP", "service": "ai-service", "version": app_version}
 
 
 @app.post("/api/agent/ask", response_model=AgentAskResponse)

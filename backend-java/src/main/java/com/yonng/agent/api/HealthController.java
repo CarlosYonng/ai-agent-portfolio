@@ -21,6 +21,7 @@ public class HealthController {
         return Map.of(
                 "status", "UP",
                 "service", "agent-backend-java",
+                "version", "1.0.0",
                 "time", OffsetDateTime.now().toString()
         );
     }

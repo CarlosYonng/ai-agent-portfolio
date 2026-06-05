@@ -14,11 +14,12 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from app import utils
+from app import __version__ as app_version
 
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-app = FastAPI(title="MCP Style Tool Server", version="0.1.0")
+app = FastAPI(title="MCP Style Tool Server", version=app_version)
 
 
 @app.on_event("startup")
@@ -77,7 +78,7 @@ class RefreshVectorRequest(BaseModel):
 async def health() -> dict[str, str]:
     """健康检查接口。"""
 
-    return {"status": "UP", "service": "mcp-server"}
+    return {"status": "UP", "service": "mcp-server", "version": app_version}
 
 
 @app.get("/api/tools")

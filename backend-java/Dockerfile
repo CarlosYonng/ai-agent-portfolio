@@ -9,6 +9,9 @@ COPY src ./src
 RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre
+
+LABEL org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.ref.name="agent-backend-java"
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
