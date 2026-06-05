@@ -59,18 +59,18 @@ python3 scripts/local_demo.py
 
 ## 目前状态
 
-当前是第一版可开发骨架，重点已经落好：
+当前骨架已完成，核心链路均已打通：
 
 - Java 后端项目结构和核心接口。
 - Python Agent 服务结构、可替换模型客户端、Qdrant 检索优先的 HybridRetriever。
-- MCP 风格工具服务结构，日志、代码和工单查询会优先读 MySQL。
+- MCP 风格工具服务，search_code / search_tickets 已升级为**全文检索 + 向量搜索混合**，全面移除 mock 数据。
 - Java 微服务故障诊断 Agent 已有 `/api/incident/diagnose` 和 Java 后端转发入口。
-- MySQL 表结构。
+- 根因分析（rank_root_causes）和处理建议（build_actions）已从硬编码规则升级为 **LLM 动态生成**。
 - MySQL 表结构已补充表级和字段级中文 `COMMENT`，方便面试时直接讲数据模型。
 - Qdrant/Neo4j/Docker 编排。
 - 文档导入时会抽取错误码、API、业务术语，并写入 Neo4j 的 Document-Chunk-Entity 图谱。
-- RAG 检索链路已支持 Qdrant -> Neo4j GraphRAG -> MySQL -> mock 的降级顺序。
-- Python Agent 已补充单元测试，覆盖 RAG 编排、拒答校验和故障根因规则。
+- RAG 检索链路已支持 Qdrant -> Neo4j GraphRAG -> MySQL 的降级顺序。
+- Python Agent 已补充单元测试，覆盖 RAG 编排、拒答校验和故障根因分析。
 - Java 后端已补充 ChatService 会话标题逻辑单元测试。
 - 示例数据和自动化脚本。
 

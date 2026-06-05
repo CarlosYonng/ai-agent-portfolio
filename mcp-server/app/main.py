@@ -6,15 +6,14 @@
 
 from __future__ import annotations
 
-import os
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from dotenv import load_dotenv
 from pydantic import BaseModel
+
+from app import utils
 
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -22,37 +21,14 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 app = FastAPI(title="MCP Style Tool Server", version="0.1.0")
 
 
-def query_mysql(sql: str, params: tuple[object, ...]) -> list[dict[str, object]]:
-    """执行 MySQL 查询。
-
-    数据库不可用时返回空列表，工具接口会自动降级到 mock 数据。
-    """
+@app.on_event("startup")
+async def startup():
+    """启动时确保 Qdrant 集合存在。"""
 
     try:
-        import pymysql
-    except ImportError:
-        return []
-
-    dsn = os.getenv("MYSQL_DSN", "mysql://agent:agent123@localhost:3306/agentdb")
-    parsed = urlparse(dsn)
-    try:
-        conn = pymysql.connect(
-            host=parsed.hostname or "localhost",
-            port=parsed.port or 3306,
-            user=parsed.username or "agent",
-            password=parsed.password or "agent123",
-            database=(parsed.path or "/agentdb").lstrip("/"),
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-        )
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                return [dict(row) for row in cur.fetchall()]
-        finally:
-            conn.close()
+        await utils.qdrant_ensure_collection("knowledge_vectors")
     except Exception:
-        return []
+        pass
 
 
 class SearchLogsRequest(BaseModel):
@@ -87,6 +63,16 @@ class ReportRequest(BaseModel):
     evidences: list[str]
 
 
+class RefreshVectorRequest(BaseModel):
+    """向量刷新请求。
+
+    不传/传空 = 全量刷新该表；传 ID 列表 = 只刷新指定行。
+    """
+
+    code_symbols: Optional[list[int]] = None
+    incident_tickets: Optional[list[int]] = None
+
+
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     """健康检查接口。"""
@@ -115,7 +101,7 @@ async def search_logs(request: SearchLogsRequest) -> dict[str, object]:
     第一版返回 mock 数据，后续可以接 MySQL obs_log_event 或 Elasticsearch。
     """
 
-    rows = query_mysql(
+    rows = utils.query_mysql(
         """
         select trace_id, level, endpoint, exception_type, message, occurred_at
         from obs_log_event
@@ -129,93 +115,116 @@ async def search_logs(request: SearchLogsRequest) -> dict[str, object]:
     if rows:
         return {"tool": "search_logs", "query": request.model_dump(), "results": rows}
 
-    return {
-        "tool": "search_logs",
-        "query": request.model_dump(),
-        "results": [
-            {
-                "trace_id": request.trace_id or "demo-trace-001",
-                "service": request.service,
-                "level": request.level or "ERROR",
-                "message": "NullPointerException at OrderCreateService.createOrder",
-                "occurred_at": datetime.now().isoformat(),
-            }
-        ],
-    }
+    return {"tool": "search_logs", "query": request.model_dump(), "results": []}
 
 
 @app.post("/api/tools/search_code")
 async def search_code(request: SearchCodeRequest) -> dict[str, object]:
-    """检索代码片段。
+    """检索代码（混合搜索：全文检索 + 向量语义搜索）。"""
 
-    第一版从本地样例目录做简单字符串提示，后续可接 code_symbols 向量集合。
-    """
-
-    rows = query_mysql(
+    # ---------- 1. 全文检索 ----------
+    ft_rows = utils.query_mysql(
         """
-        select file_path, symbol_name as symbol, content, 0.60 as score
+        select id, file_path, symbol_name as symbol, content,
+               match(file_path, symbol_name, content) against (%s) as score
         from code_symbol
         where service_name = %s
-          and (
-            match(file_path, symbol_name, content) against (%s in natural language mode)
-            or content like %s
-            or file_path like %s
-          )
+          and match(file_path, symbol_name, content) against (%s)
+        order by score desc
         limit 10
         """,
-        (request.service, request.query, f"%{request.query}%", f"%{request.query}%"),
+        (request.query, request.service, request.query),
     )
-    if rows:
-        # 代码内容可能较长，工具返回时只给预览，避免塞爆 Agent 上下文。
-        for row in rows:
-            row["preview"] = str(row.pop("content", ""))[:500]
-        return {"tool": "search_code", "query": request.model_dump(), "results": rows}
 
-    return {
-        "tool": "search_code",
-        "query": request.model_dump(),
-        "results": [
-            {
-                "file_path": "OrderCreateService.java",
-                "symbol": "createOrder",
-                "preview": "createOrder 方法需要校验 couponId 是否为空，避免 NPE。",
-                "score": 0.78,
-            }
-        ],
-    }
+    # ---------- 2. 向量检索 ----------
+    vec_rows: list[dict] = []
+    try:
+        vector = await utils.embed_text(
+            f"{request.query} {request.service} java"
+        )
+        hits = await utils.qdrant_search(
+            "knowledge_vectors", vector,
+            filter_condition={"must": [{"key": "_table", "match": {"value": "code_symbol"}}]},
+        )
+        if hits:
+            # Qdrant point ID = "code_symbol_1"，payload.id = MySQL 主键
+            score_map = {h["payload"]["id"]: h["score"] for h in hits}
+            ids = [h["payload"]["id"] for h in hits]
+            vec_rows = utils.fetch_by_ids(
+                "code_symbol", "id", ids, score_map
+            )
+    except Exception:
+        pass  # 向量搜索失败时只用全文结果
+
+    # ---------- 3. 混合排序 ----------
+    merged = utils.merge_ranked(ft_rows, vec_rows, dedup_key="id")
+
+    # content 太长时截取预览，并清理多余字段
+    cleaned = []
+    FIELD_MAP = {"file_path", "symbol", "preview", "score", "_match_type"}
+    for row in merged:
+        if "content" in row:
+            row["preview"] = str(row.pop("content", ""))[:500]
+        # 统一 symbol 字段名
+        if "symbol_name" in row and "symbol" not in row:
+            row["symbol"] = row.pop("symbol_name")
+        cleaned.append({k: v for k, v in row.items() if k in FIELD_MAP})
+
+    return {"tool": "search_code", "query": request.model_dump(), "results": cleaned}
 
 
 @app.post("/api/tools/search_tickets")
 async def search_tickets(request: SearchTicketsRequest) -> dict[str, object]:
-    """检索相似历史工单。"""
+    """检索相似历史工单（混合搜索：语义向量 + 关键词）。"""
 
-    rows = query_mysql(
+    # ---------- 1. 向量检索（语义匹配） ----------
+    vec_rows: list[dict] = []
+    try:
+        vector = await utils.embed_text(f"{request.symptom} {request.service}")
+        hits = await utils.qdrant_search(
+            "knowledge_vectors", vector,
+            filter_condition={"must": [{"key": "_table", "match": {"value": "incident_ticket"}}]},
+        )
+        if hits:
+            score_map = {h["payload"]["id"]: h["score"] for h in hits}
+            ids = [h["payload"]["id"] for h in hits]
+            vec_rows = utils.fetch_by_ids(
+                "incident_ticket", "id", ids, score_map
+            )
+            # alias 字段名以保持返回格式一致
+            for row in vec_rows:
+                row["ticket_id"] = row.pop("id", None)
+    except Exception:
+        pass
+
+    # ---------- 2. 关键词检索（LIKE 兜底） ----------
+    ft_rows = utils.query_mysql(
         """
-        select id as ticket_id, symptom, root_cause, solution, severity, created_at
+        select id as ticket_id, symptom, root_cause, solution, severity, created_at,
+               0.3 as score
         from incident_ticket
         where service_name = %s
           and (symptom like %s or root_cause like %s or solution like %s)
         order by created_at desc
         limit 10
         """,
-        (request.service, f"%{request.symptom}%", f"%{request.symptom}%", f"%{request.symptom}%"),
+        (
+            request.service,
+            f"%{request.symptom}%",
+            f"%{request.symptom}%",
+            f"%{request.symptom}%",
+        ),
     )
-    if rows:
-        return {"tool": "search_tickets", "query": request.model_dump(), "results": rows}
 
-    return {
-        "tool": "search_tickets",
-        "query": request.model_dump(),
-        "results": [
-            {
-                "ticket_id": "INC-2026-001",
-                "symptom": "订单创建接口 500，异常栈出现 NullPointerException。",
-                "root_cause": "优惠券 ID 为空时没有做防御性校验。",
-                "solution": "增加空值校验，并在无优惠券场景跳过优惠券服务调用。",
-                "score": 0.81,
-            }
-        ],
-    }
+    # ---------- 3. 混合排序 ----------
+    merged = utils.merge_ranked(ft_rows, vec_rows, dedup_key="ticket_id")
+
+    # 清理多余字段
+    FIELD_MAP = {"ticket_id", "symptom", "root_cause", "solution", "severity",
+                 "created_at", "score", "_match_type"}
+    cleaned = [{k: v for k, v in r.items() if k in FIELD_MAP} for r in merged]
+
+    return {"tool": "search_tickets", "query": request.model_dump(), "results": cleaned}
 
 
 @app.post("/api/tools/generate_report")
@@ -233,3 +242,71 @@ async def generate_report(request: ReportRequest) -> dict[str, object]:
     path = Path("/tmp") / f"{request.incident_id}.md"
     path.write_text(report, encoding="utf-8")
     return {"tool": "generate_report", "path": str(path), "content": report}
+
+
+@app.post("/api/admin/refresh_vectors")
+async def refresh_vectors(
+    request: RefreshVectorRequest = None,
+) -> dict[str, object]:
+    """从 MySQL 读取数据，embedding 后写入 Qdrant 向量库。
+
+    增量用法 — 只刷新指定的行（推荐）：
+      POST /api/admin/refresh_vectors
+      {"code_symbols": [1, 3], "incident_tickets": [2]}
+
+    全量用法 — 传空 body 或 {}
+      POST /api/admin/refresh_vectors  {}
+    会重新读取整个表，覆盖 Qdrant 中已有的向量。
+    """
+
+    if request is None:
+        request = RefreshVectorRequest()
+
+    # 先查询两表，分别构造点，再一次性写入 Qdrant
+    # Qdrant point ID 必须是正整数或 UUID。用 table_id * 1000000 + row_id
+    # 让两张表的 ID 落在不同区间，保证不冲突。
+    TABLE_ID_OFFSET = {"code_symbol": 1, "incident_ticket": 2}
+    all_points: list[dict] = []
+    tables_config = [
+        ("code_symbol", ["id", "file_path", "symbol_name", "content", "service_name"],
+         ["file_path", "symbol_name", "content", "service_name"],
+         [("id", "id"), ("file_path", "file_path"), ("symbol_name", "symbol")],
+         request.code_symbols),
+        ("incident_ticket", ["id", "symptom", "root_cause", "solution", "service_name", "severity"],
+         ["symptom", "root_cause", "solution", "service_name"],
+         [("id", "id"), ("id", "ticket_id"), ("severity", "severity")],
+         request.incident_tickets),
+    ]
+
+    for table, select_cols, embed_fields, payload_fields, ids in tables_config:
+        cols = ", ".join(select_cols)
+        if ids:
+            ph = ",".join(["%s"] * len(ids))
+            rows = utils.query_mysql(
+                f"select {cols} from {table} where id in ({ph})", tuple(ids)
+            )
+        else:
+            rows = utils.query_mysql(f"select {cols} from {table}")
+        for row in rows:
+            text = " ".join(str(row[f]) for f in embed_fields if f in row)
+            try:
+                vector = await utils.embed_text(text)
+            except Exception:
+                continue
+            payload = {alias: row[col] for col, alias in payload_fields if col in row}
+            payload["_table"] = table  # 标记来源表，搜索时过滤用
+            point_id = TABLE_ID_OFFSET.get(table, 0) * 1_000_000 + row["id"]
+            all_points.append({"id": point_id, "vector": vector, "payload": payload})
+
+    written = {"code_symbol": 0, "incident_ticket": 0}
+    if all_points:
+        try:
+            await utils.qdrant_upsert("knowledge_vectors", all_points)
+            for p in all_points:
+                t = p["payload"].get("_table", "unknown")
+                if t in written:
+                    written[t] += 1
+        except Exception:
+            written = {"code_symbol": 0, "incident_ticket": 0}
+
+    return {"tool": "refresh_vectors", "written": written}

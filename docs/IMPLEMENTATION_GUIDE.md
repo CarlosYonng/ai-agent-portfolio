@@ -124,11 +124,13 @@ Qdrant 和 Neo4j 都是主流选择，适合简历项目：
 
 ### 第五步：接入真实 MCP 工具
 
-把 `mcp-server` 里的 mock 返回改成真实查询：
+已完成：
 
-- `search_logs` 查询 `obs_log_event`，已完成基础版
-- `search_code` 查询 `code_symbol`，已完成基础版
-- `search_tickets` 查询 `incident_ticket`，已完成基础版
+- `search_logs` 查询 `obs_log_event` ✅
+- `search_code` 升级为**全文检索 + Qdrant 向量搜索混合**，移除 mock ✅
+- `search_tickets` 升级为**Qdrant 向量语义匹配 + LIKE 关键词兜底**，移除 mock ✅
+- 搜索接口统一返回 `results: []`，不再返回硬编码 mock 数据 ✅
+- 向量数据通过 `/api/admin/refresh_vectors` 增量刷新，MySQL 与 Qdrant 保持最终一致 ✅
 
 ### 第七步：故障诊断 Agent
 
@@ -141,13 +143,12 @@ Qdrant 和 Neo4j 都是主流选择，适合简历项目：
 
 待增强：
 
-- `search_code` 后续可从 MySQL 关键词检索升级为 Qdrant 代码向量检索
 - 引入真实指标数据，如 QPS、P95、错误率
 - 把诊断报告写入数据库并生成 Markdown/PDF
 
 ### 第六步：补测试和评测
 
-- Python Agent 单元测试已完成基础版，覆盖 RAG 编排、Verifier 拒答和故障根因规则。
+- Python Agent 单元测试已完成基础版，覆盖 RAG 编排、Verifier 拒答和故障根因分析（LLM 动态生成）。
 - Java 单元测试已完成基础版，覆盖 ChatService 会话标题生成。
 - 后续继续补 Java Controller 集成测试和带 Testcontainers 的 MySQL 集成测试。
 - `scripts/run_rag_eval.py` 调用真实 `/api/agent/ask`，计算 Recall@5。
