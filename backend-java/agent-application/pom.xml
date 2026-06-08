@@ -1,0 +1,91 @@
+<!-- 业务层：编排用例、事务边界、DTO 转换和跨服务调用。 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.yonng</groupId>
+        <artifactId>agent-backend-java-parent</artifactId>
+        <version>1.1.0</version>
+    </parent>
+
+    <artifactId>agent-application</artifactId>
+    <name>agent-application</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.yonng</groupId>
+            <artifactId>agent-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.yonng</groupId>
+            <artifactId>agent-infrastructure</artifactId>
+        </dependency>
+
+        <!-- Service 使用 @Service，不在业务层引入完整 Web Starter，避免把运行时容器依赖扩散进来。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+
+        <!-- 事务边界放在业务层，Controller 不直接开启事务。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+
+        <!-- RestClient、MediaType、SSE 类型和 HTTP 异常都来自 Spring Web。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+
+        <!-- Reactor Flux 用于 SSE 流式响应。 -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.reactivestreams</groupId>
+            <artifactId>reactive-streams</artifactId>
+        </dependency>
+
+        <!-- 业务层用 LambdaQueryWrapper 靠近 MyBatis Plus 主流写法。 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-core</artifactId>
+        </dependency>
+
+        <!-- DTO 序列化和 AI 服务 JSON 编码。 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+
+        <!-- 请求 DTO 使用 Bean Validation 注解，运行时校验实现由启动层 starter 提供。 -->
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

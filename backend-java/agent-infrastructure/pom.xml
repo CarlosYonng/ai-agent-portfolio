@@ -1,0 +1,28 @@
+<!-- 基础设施层：数据库 Mapper、外部存储客户端等实现细节放在这里。 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.yonng</groupId>
+        <artifactId>agent-backend-java-parent</artifactId>
+        <version>1.1.0</version>
+    </parent>
+
+    <artifactId>agent-infrastructure</artifactId>
+    <name>agent-infrastructure</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.yonng</groupId>
+            <artifactId>agent-domain</artifactId>
+        </dependency>
+
+        <!-- Mapper 接口只需要 BaseMapper 编译依赖，Spring Boot 自动配置放在启动层。 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-core</artifactId>
+        </dependency>
+    </dependencies>
+</project>
