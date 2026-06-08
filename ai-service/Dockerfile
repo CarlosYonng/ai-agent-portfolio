@@ -3,7 +3,7 @@
 
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.version="1.0.0" \
+LABEL org.opencontainers.image.version="1.1.0" \
       org.opencontainers.image.ref.name="ai-service"
 
 WORKDIR /app
@@ -19,4 +19,3 @@ EXPOSE 8000
 
 # uvicorn 提供 FastAPI HTTP 服务。
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
