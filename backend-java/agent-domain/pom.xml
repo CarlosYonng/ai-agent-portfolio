@@ -1,0 +1,23 @@
+<!-- 领域层：只放持久化实体和领域对象，不依赖 Spring Boot Web/API。 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.yonng</groupId>
+        <artifactId>agent-backend-java-parent</artifactId>
+        <version>1.1.0</version>
+    </parent>
+
+    <artifactId>agent-domain</artifactId>
+    <name>agent-domain</name>
+
+    <dependencies>
+        <!-- 实体上使用 MyBatis Plus 表映射注解，但领域层不引入完整 Starter。 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-annotation</artifactId>
+        </dependency>
+    </dependencies>
+</project>

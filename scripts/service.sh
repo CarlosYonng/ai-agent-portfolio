@@ -270,9 +270,9 @@ start_java() {
   fi
   load_env
   cd "$PROJECT_DIR/backend-java"
-  # 先编译，避免 spring-boot:run 时的编译耗时
-  mvn compile -q 2>/dev/null || true
-  nohup mvn spring-boot:run \
+  # 多模块后只把启动层打成可执行 Jar，避免非启动模块参与 spring-boot:run。
+  mvn -q -pl agent-boot -am -DskipTests package
+  nohup java -jar agent-boot/target/agent-boot-1.1.0.jar \
     > "$LOG_DIR/java-backend.log" 2>&1 &
   local pid=$!
   info "Java 编译启动中 (PID $pid)，首次需下载依赖约 1-2 分钟..."

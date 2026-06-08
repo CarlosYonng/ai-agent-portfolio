@@ -3,6 +3,9 @@
 
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.ref.name="ai-service"
+
 WORKDIR /app
 
 # 先复制 requirements，可以利用 Docker layer cache。

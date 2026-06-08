@@ -1,2 +1,4 @@
-# 让 app 目录成为 Python 包。
+"""MCP Server 包。"""
+
+__version__ = "1.0.0"
 

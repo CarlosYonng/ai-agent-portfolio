@@ -1,0 +1,39 @@
+# Spring Boot 配置。
+# docker profile 会从环境变量读取 AI 服务地址，便于 docker-compose 内部调用。
+
+server:
+  port: 8080
+
+app:
+  version: "@project.version@"
+
+spring:
+  application:
+    name: agent-backend-java
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: agent
+    password: agent123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+agent:
+  ai-service-base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  datasource:
+    url: jdbc:mysql://mysql:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: agent
+    password: agent123
