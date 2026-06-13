@@ -30,14 +30,4 @@ class ChatServiceTest {
         assertThat(title).isEqualTo("这是一个非常长的企业知识库问题，用来验证会话标题不会撑开页面");
     }
 
-    @Test
-    void splitAnswerReturnsSingleEmptyChunkWhenAnswerIsBlank() {
-        assertThat(ChatService.splitAnswer("", 24)).containsExactly("");
-    }
-
-    @Test
-    void splitAnswerKeepsChunksWithinSize() {
-        assertThat(ChatService.splitAnswer("PAY_5001 表示支付回调签名校验失败。", 8))
-                .containsExactly("PAY_5001", " 表示支付回调签", "名校验失败。");
-    }
 }

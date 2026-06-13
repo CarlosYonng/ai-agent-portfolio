@@ -15,6 +15,7 @@ class AgentAskRequest(BaseModel):
     user_id: int
     session_id: int
     message_id: Optional[int] = None
+    kb_id: Optional[int] = None
     question: str = Field(min_length=1)
 
 

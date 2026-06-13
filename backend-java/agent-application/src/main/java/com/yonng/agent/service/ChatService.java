@@ -2,23 +2,19 @@ package com.yonng.agent.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.yonng.agent.domain.ChatMessage;
 import com.yonng.agent.domain.ChatSession;
 import com.yonng.agent.dto.ChatRequest;
+import com.yonng.agent.dto.ChatMessageResponse;
 import com.yonng.agent.dto.ChatResponse;
-import com.yonng.agent.dto.ChatStreamEvent;
+import com.yonng.agent.dto.ChatSessionResponse;
 import com.yonng.agent.mapper.ChatMessageMapper;
 import com.yonng.agent.mapper.ChatSessionMapper;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,12 +32,18 @@ public class ChatService {
     private final ChatMessageMapper chatMessageMapper;
     private final RestClient aiRestClient;
     private final ObjectMapper objectMapper;
+    private final HistorySchemaService historySchemaService;
 
-    public ChatService(ChatSessionMapper chatSessionMapper, ChatMessageMapper chatMessageMapper, RestClient aiRestClient, ObjectMapper objectMapper) {
+    public ChatService(ChatSessionMapper chatSessionMapper,
+                       ChatMessageMapper chatMessageMapper,
+                       RestClient aiRestClient,
+                       ObjectMapper objectMapper,
+                       HistorySchemaService historySchemaService) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
         this.aiRestClient = aiRestClient;
         this.objectMapper = objectMapper;
+        this.historySchemaService = historySchemaService;
     }
 
     /**
@@ -56,6 +58,7 @@ public class ChatService {
         aiRequest.put("user_id", request.getUserId());
         aiRequest.put("session_id", sessionId);
         aiRequest.put("message_id", messageId);
+        aiRequest.put("kb_id", request.getKbId());
         aiRequest.put("question", request.getQuestion());
 
         try {
@@ -77,70 +80,87 @@ public class ChatService {
     }
 
     /**
-     * 将问答结果转换成 SSE 事件流。
-     *
-     * <p>当前 Python AI 服务仍返回完整 JSON，因此这里先把完整答案切成 delta 事件；
-     * 后续下游支持 token 流时，只需要替换 AI 调用部分。</p>
+     * 查询用户在指定知识库下的历史会话。
      */
-    public Flux<ServerSentEvent<ChatStreamEvent>> askStream(ChatRequest request) {
-        return Mono.fromCallable(() -> ask(request))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMapMany(this::toStreamEvents)
-                .onErrorResume(error -> Flux.just(sse("error", ChatStreamEvent.error(error.getMessage()))));
-    }
-
-    private Flux<ServerSentEvent<ChatStreamEvent>> toStreamEvents(ChatResponse response) {
-        Long sessionId = response.getSessionId();
-        String traceId = response.getTraceId();
-        String answer = response.getAnswer() == null ? "" : response.getAnswer();
-
-        Flux<ServerSentEvent<ChatStreamEvent>> metadata = Flux.just(
-                sse("metadata", ChatStreamEvent.metadata(sessionId, traceId))
-        );
-        Flux<ServerSentEvent<ChatStreamEvent>> deltas = Flux.fromIterable(splitAnswer(answer, 24))
-                .delayElements(Duration.ofMillis(25))
-                .map(chunk -> sse("delta", ChatStreamEvent.delta(sessionId, traceId, chunk)));
-        Flux<ServerSentEvent<ChatStreamEvent>> citations = Flux.just(
-                sse("citations", ChatStreamEvent.citations(sessionId, traceId, response.getCitations()))
-        );
-        Flux<ServerSentEvent<ChatStreamEvent>> done = Flux.just(
-                sse("done", ChatStreamEvent.done(sessionId, traceId, answer))
-        );
-
-        return Flux.concat(metadata, deltas, citations, done);
+    public List<ChatSessionResponse> listSessions(Long tenantId, Long userId, Long kbId) {
+        historySchemaService.ensureSchema();
+        LambdaQueryWrapper<ChatSession> wrapper = new LambdaQueryWrapper<ChatSession>()
+                .select(ChatSession::getId,
+                        ChatSession::getTenantId,
+                        ChatSession::getUserId,
+                        ChatSession::getKbId,
+                        ChatSession::getTitle,
+                        ChatSession::getCreatedAt,
+                        ChatSession::getUpdatedAt)
+                .eq(ChatSession::getTenantId, tenantId)
+                .eq(ChatSession::getUserId, userId)
+                .orderByDesc(ChatSession::getUpdatedAt);
+        if (kbId != null) {
+            wrapper.eq(ChatSession::getKbId, kbId);
+        }
+        try {
+            return chatSessionMapper.selectList(wrapper)
+                    .stream()
+                    .map(ChatSessionResponse::from)
+                    .toList();
+        } catch (RuntimeException error) {
+            return listSessionsWithoutKbId(tenantId, userId);
+        }
     }
 
     /**
-     * 把完整答案拆成 SSE delta 片段。
+     * 查询某个会话下的问答消息，用于前端回看历史答案和 Trace。
      */
-    static List<String> splitAnswer(String answer, int chunkSize) {
-        List<String> chunks = new ArrayList<>();
-        if (answer == null || answer.isEmpty()) {
-            chunks.add("");
-            return chunks;
+    public List<ChatMessageResponse> listMessages(Long tenantId, Long sessionId) {
+        try {
+            return chatMessageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                            .select(ChatMessage::getId,
+                                    ChatMessage::getTenantId,
+                                    ChatMessage::getSessionId,
+                                    ChatMessage::getRole,
+                                    ChatMessage::getContent,
+                                    ChatMessage::getTraceId,
+                                    ChatMessage::getCreatedAt)
+                            .eq(ChatMessage::getTenantId, tenantId)
+                            .eq(ChatMessage::getSessionId, sessionId)
+                            .orderByAsc(ChatMessage::getId))
+                    .stream()
+                    .map(ChatMessageResponse::from)
+                    .toList();
+        } catch (RuntimeException error) {
+            return List.of();
         }
-        int offset = 0;
-        while (offset < answer.length()) {
-            int next = Math.min(answer.length(), offset + chunkSize);
-            chunks.add(answer.substring(offset, next));
-            offset = next;
-        }
-        return chunks;
     }
 
-    private static ServerSentEvent<ChatStreamEvent> sse(String eventName, ChatStreamEvent data) {
-        return ServerSentEvent.builder(data)
-                .event(eventName)
-                .build();
+    private List<ChatSessionResponse> listSessionsWithoutKbId(Long tenantId, Long userId) {
+        try {
+            return chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
+                            .select(ChatSession::getId,
+                                    ChatSession::getTenantId,
+                                    ChatSession::getUserId,
+                                    ChatSession::getTitle,
+                                    ChatSession::getCreatedAt,
+                                    ChatSession::getUpdatedAt)
+                            .eq(ChatSession::getTenantId, tenantId)
+                            .eq(ChatSession::getUserId, userId)
+                            .orderByDesc(ChatSession::getUpdatedAt))
+                    .stream()
+                    .map(ChatSessionResponse::from)
+                    .toList();
+        } catch (RuntimeException error) {
+            return List.of();
+        }
     }
 
     private Long ensureSession(ChatRequest request) {
         if (request.getSessionId() != null) {
             return request.getSessionId();
         }
+        historySchemaService.ensureSchema();
         ChatSession session = new ChatSession();
         session.setTenantId(request.getTenantId());
         session.setUserId(request.getUserId());
+        session.setKbId(request.getKbId());
         session.setTitle(titleFromQuestion(request.getQuestion()));
         chatSessionMapper.insert(session);
         return Objects.requireNonNull(session.getId());

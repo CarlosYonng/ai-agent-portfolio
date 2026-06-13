@@ -13,6 +13,7 @@ class AgentState(TypedDict, total=False):
     user_id: int
     session_id: int
     message_id: Optional[int]
+    kb_id: Optional[int]
     question: str
     trace_id: str
     route_type: str

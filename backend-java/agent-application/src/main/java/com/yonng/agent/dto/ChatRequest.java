@@ -21,6 +21,9 @@ public class ChatRequest {
     /** 为空时自动创建新会话；不为空时追加到已有会话。 */
     private Long sessionId;
 
+    /** 当前问答限定的知识库；为空时按租户全局知识检索。 */
+    private Long kbId;
+
     /** 用户原始问题，会被 AI 服务改写为检索 query。 */
     @NotBlank
     private String question;
@@ -47,6 +50,14 @@ public class ChatRequest {
 
     public void setSessionId(Long sessionId) {
         this.sessionId = sessionId;
+    }
+
+    public Long getKbId() {
+        return kbId;
+    }
+
+    public void setKbId(Long kbId) {
+        this.kbId = kbId;
     }
 
     public String getQuestion() {

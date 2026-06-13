@@ -12,6 +12,7 @@
 - `scripts/`: 数据导入、评测、冒烟测试和后续微调脚本。
 - `datasets/`: 示例知识库、日志、历史工单和评测样本。
 - `docs/BUSINESS_FLOW.md`: 业务流程说明，包含 RAG 和故障诊断两条主链路。
+- `docs/KB_OPERATION_FLOW.md`: 知识库管理、导入索引、RAG 问答和删除清理流程图。
 
 ## 先做什么
 

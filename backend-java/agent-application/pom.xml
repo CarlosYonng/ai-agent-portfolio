@@ -35,20 +35,10 @@
             <artifactId>spring-tx</artifactId>
         </dependency>
 
-        <!-- RestClient、MediaType、SSE 类型和 HTTP 异常都来自 Spring Web。 -->
+        <!-- RestClient、MediaType 和 HTTP 异常都来自 Spring Web。 -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
-        </dependency>
-
-        <!-- Reactor Flux 用于 SSE 流式响应。 -->
-        <dependency>
-            <groupId>io.projectreactor</groupId>
-            <artifactId>reactor-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.reactivestreams</groupId>
-            <artifactId>reactive-streams</artifactId>
         </dependency>
 
         <!-- 业务层用 LambdaQueryWrapper 靠近 MyBatis Plus 主流写法。 -->

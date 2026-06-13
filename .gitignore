@@ -4,12 +4,16 @@
 
 # Java 构建产物。
 backend-java/target/
+backend-java/**/target/
 .m2/
 
 # 前端依赖和构建产物。
 frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Python 缓存文件。
 .venv/

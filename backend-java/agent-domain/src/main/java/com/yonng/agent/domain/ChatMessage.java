@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+import java.time.OffsetDateTime;
+
 /**
  * 聊天消息。
  *
@@ -30,6 +32,9 @@ public class ChatMessage {
 
     /** assistant 消息关联的 Agent Trace；用户消息通常为空。 */
     private String traceId;
+
+    /** 消息创建时间。 */
+    private OffsetDateTime createdAt;
 
     public Long getId() {
         return id;
@@ -77,5 +82,13 @@ public class ChatMessage {
 
     public void setTraceId(String traceId) {
         this.traceId = traceId;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(OffsetDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 }

@@ -46,8 +46,8 @@ class ModelClient:
         """没有真实模型时的兜底生成，方便 smoke test。"""
 
         return (
-            "这是 mock 模型返回。真实开发时请在 .env 中配置 LLM_TOKEN。"
-            " 当前问题已通过 Agent 链路处理，证据会在 citations 中展示。"
+            "当前未检测到可用的真实模型配置，系统已使用离线兜底生成结果。"
+            "问题已通过 Agent 链路处理，相关证据会在引用中展示。"
         )
 
 

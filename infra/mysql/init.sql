@@ -86,10 +86,12 @@ create table if not exists chat_session (
   id bigint primary key auto_increment comment '会话主键',
   tenant_id bigint not null comment '租户 ID',
   user_id bigint not null comment '发起会话的用户 ID',
+  kb_id bigint comment '当前会话限定的知识库 ID，为空表示租户全局问答',
   title varchar(255) not null default 'New Session' comment '会话标题，默认从首条问题截断生成',
   created_at timestamp not null default current_timestamp comment '创建时间',
   updated_at timestamp not null default current_timestamp on update current_timestamp comment '最后更新时间',
-  key idx_session_user (user_id, updated_at)
+  key idx_session_user (user_id, updated_at),
+  key idx_session_kb (tenant_id, kb_id, updated_at)
 ) engine=InnoDB default charset=utf8mb4 comment='聊天会话表，用于沉淀多轮问答上下文';
 
 create table if not exists chat_message (
@@ -117,6 +119,21 @@ create table if not exists agent_trace (
   created_at timestamp not null default current_timestamp comment '创建时间',
   key idx_trace_id (trace_id)
 ) engine=InnoDB default charset=utf8mb4 comment='Agent 执行轨迹表，用于排查、演示和评测';
+
+create table if not exists incident_diagnosis_history (
+  id bigint primary key auto_increment comment '故障诊断历史主键',
+  tenant_id bigint not null comment '租户 ID',
+  user_id bigint not null comment '发起诊断的用户 ID',
+  service_name varchar(128) not null comment '故障所属服务名',
+  business_trace_id varchar(128) comment '业务系统日志 traceId',
+  agent_trace_id varchar(128) comment '诊断 Agent 返回的 traceId',
+  question text not null comment '用户输入的故障描述',
+  summary text comment '诊断摘要',
+  response_json json comment '完整诊断响应 JSON',
+  created_at timestamp not null default current_timestamp comment '创建时间',
+  key idx_incident_history_user (tenant_id, user_id, created_at),
+  key idx_incident_history_trace (business_trace_id)
+) engine=InnoDB default charset=utf8mb4 comment='故障诊断历史表，用于回看研发排障结果';
 
 create table if not exists eval_case (
   id bigint primary key auto_increment comment '评测用例主键',
