@@ -2,9 +2,12 @@ package com.yonng.agent.api;
 
 import com.yonng.agent.dto.IncidentDiagnoseRequest;
 import com.yonng.agent.dto.IncidentDiagnoseResponse;
+import com.yonng.agent.dto.IncidentHistoryResponse;
 import com.yonng.agent.service.IncidentService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * Java 微服务故障诊断接口。
@@ -27,5 +30,14 @@ public class IncidentController {
     @PostMapping("/diagnose")
     public IncidentDiagnoseResponse diagnose(@Valid @RequestBody IncidentDiagnoseRequest request) {
         return incidentService.diagnose(request);
+    }
+
+    /**
+     * 查询研发故障诊断历史。
+     */
+    @GetMapping("/history")
+    public List<IncidentHistoryResponse> listHistory(@RequestParam Long tenantId,
+                                                     @RequestParam Long userId) {
+        return incidentService.listHistory(tenantId, userId);
     }
 }

@@ -38,12 +38,24 @@ export type ChatResponse = {
   citations?: Citation[];
 };
 
-export type ChatStreamEvent = {
-  type: "metadata" | "delta" | "citations" | "done" | "error";
-  sessionId?: number;
+export type ChatSession = {
+  id: number;
+  tenantId: number;
+  userId: number;
+  kbId?: number;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ChatMessage = {
+  id: number;
+  tenantId: number;
+  sessionId: number;
+  role: "user" | "assistant" | "system";
+  content: string;
   traceId?: string;
-  content?: string;
-  citations?: Citation[];
+  createdAt?: string;
 };
 
 export type TraceNode = {
@@ -61,4 +73,24 @@ export type IncidentResponse = {
   root_causes?: Array<{ cause?: string; confidence?: number; evidence?: string }>;
   actions?: string[];
   evidences?: Array<Record<string, unknown>>;
+};
+
+export type IncidentHistory = {
+  id: number;
+  tenantId: number;
+  userId: number;
+  serviceName: string;
+  businessTraceId?: string;
+  agentTraceId?: string;
+  question: string;
+  summary?: string;
+  response_json?: string;
+  createdAt?: string;
+};
+
+export type TraceSummary = {
+  trace_id: string;
+  node_count: number;
+  latest_node?: string;
+  created_at?: string;
 };

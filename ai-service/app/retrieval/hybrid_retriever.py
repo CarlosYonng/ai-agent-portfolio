@@ -36,12 +36,16 @@ class HybridRetriever:
         """
 
         tenant_id = filters.get("tenant_id", 1)
+        kb_id = filters.get("kb_id")
         vector = await embed_text(query)
+        vector_filters = {"tenant_id": tenant_id}
+        if kb_id is not None:
+            vector_filters["kb_id"] = kb_id
         qdrant_results = self.qdrant.search(
             COLLECTION_NAME,
             vector=vector,
             limit=8,
-            filters={"tenant_id": tenant_id},
+            filters=vector_filters,
         )
         if qdrant_results:
             return [self._from_qdrant(point) for point in qdrant_results]
@@ -50,7 +54,7 @@ class HybridRetriever:
         if graph_results:
             return graph_results
 
-        mysql_results = self._mysql_search(query, int(tenant_id))
+        mysql_results = self._mysql_search(query, int(tenant_id), int(kb_id) if kb_id is not None else None)
         if mysql_results:
             return mysql_results
 
@@ -113,7 +117,7 @@ class HybridRetriever:
             for row in rows
         ]
 
-    def _mysql_search(self, query: str, tenant_id: int) -> list[dict[str, Any]]:
+    def _mysql_search(self, query: str, tenant_id: int, kb_id: int | None) -> list[dict[str, Any]]:
         """使用 MySQL FULLTEXT/LIKE 做关键词检索。
 
         这里是 Qdrant 的兜底路径，也能体现混合检索思路。
@@ -138,6 +142,7 @@ class HybridRetriever:
             from kb_doc_chunk c
             join kb_document d on d.id = c.doc_id
             where c.tenant_id = %s
+              and (%s is null or d.kb_id = %s)
               and (
                 match(c.title_path, c.content) against (%s in natural language mode)
                 or c.content like %s
@@ -150,7 +155,7 @@ class HybridRetriever:
             conn = connect_mysql(dict_cursor=True)
             with conn.cursor() as cur:
                 like_query = f"%{query}%"
-                cur.execute(sql, (query, query, tenant_id, query, like_query, like_query))
+                cur.execute(sql, (query, query, tenant_id, kb_id, kb_id, query, like_query, like_query))
                 rows = cur.fetchall()
             conn.close()
         except Exception:

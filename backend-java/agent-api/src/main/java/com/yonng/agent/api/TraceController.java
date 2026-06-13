@@ -1,6 +1,7 @@
 package com.yonng.agent.api;
 
 import com.yonng.agent.dto.AgentTraceNode;
+import com.yonng.agent.dto.TraceSummaryResponse;
 import com.yonng.agent.service.TraceService;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,5 +28,13 @@ public class TraceController {
     @GetMapping("/{traceId}")
     public List<AgentTraceNode> getTrace(@PathVariable String traceId) {
         return traceService.listByTraceId(traceId);
+    }
+
+    /**
+     * 查询最近的 Agent Trace 历史。
+     */
+    @GetMapping
+    public List<TraceSummaryResponse> listRecent(@RequestParam Long tenantId) {
+        return traceService.listRecent(tenantId);
     }
 }

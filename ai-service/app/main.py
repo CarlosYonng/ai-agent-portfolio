@@ -34,6 +34,7 @@ async def ask(request: AgentAskRequest) -> AgentAskResponse:
             "user_id": request.user_id,
             "session_id": request.session_id,
             "message_id": request.message_id,
+            "kb_id": request.kb_id,
             "question": request.question,
         }
     )

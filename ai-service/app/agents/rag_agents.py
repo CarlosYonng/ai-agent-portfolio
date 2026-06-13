@@ -53,6 +53,8 @@ async def rewrite_agent(state: AgentState) -> AgentState:
         "tenant_id": state["tenant_id"],
         "route_type": state["route_type"],
     }
+    if state.get("kb_id") is not None:
+        state["filters"]["kb_id"] = state["kb_id"]
     state["entities"] = []
     log_trace(
         state["trace_id"],
