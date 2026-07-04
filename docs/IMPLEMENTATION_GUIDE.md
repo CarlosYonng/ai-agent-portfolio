@@ -1,25 +1,57 @@
 # 实施说明
 
-这份说明告诉你如何继续把当前骨架做成完整项目。
+这份说明告诉你项目的当前完成状态以及后续扩展方向。
 
 ## 1. 当前已经完成
 
-- `backend-java`：Spring Boot API 骨架，包括知识库、文档登记、聊天问答、Trace 查询。
-- `frontend`：React + Vite 控制台，Nginx Docker 镜像负责静态资源和 `/api` 代理。
-- `ai-service`：FastAPI Agent 服务，包括 Router、Rewrite、Retriever、Answer、Verifier 的固定链路。
-- `mcp-server`：MCP 风格工具服务，包括日志查询、代码搜索、工单检索、报告生成。
-- `infra`：MySQL、Redis、Qdrant、Neo4j、三个服务的 docker-compose 编排。
-- `scripts`：文档导入、代码导入、日志导入、评测、冒烟测试、微调占位脚本。
-- `datasets`：知识库文档、模拟日志、历史工单、评测样本。
+### 后端（backend-java）
+Spring Boot 3.3.5 + Java 21，5 层模块：
+- agent-domain：领域实体（用户、会话、知识库、文档、Trace 等）
+- agent-infrastructure：MyBatis Plus 数据映射器
+- agent-application：业务服务、DTO、异常定义、Redis 缓存
+- agent-api：Controller 分层（external/internal/ops）
+- agent-boot：启动配置和装配
+
+核心功能：
+- 知识库 CRUD、文档上传/下载、文档状态管理
+- 聊天会话管理（创建、历史查询、SSE 流式推送）
+- JWT 认证、角色/权限控制（SUPER_ADMIN / PLATFORM_ADMIN / CUSTOMER_ADMIN / USER）
+- 客户数据隔离
+- Agent Trace 查询和统计
+
+### 前端（frontend）
+React 18 + Vite 5 + React Router 7 + Tailwind CSS：
+- 登录/注册页面
+- RAG 对话面板（支持 SSE 流式展示）
+- 知识库管理面板（CRUD、文档上传）
+- Trace 查看面板
+- 用户管理页面（平台管理员）
+- 自定义 Hook：`useAuth`、`useChat`、`useKnowledgeBase`
+- API 客户端封装 `apiRequest`（统一 JWT 注入和错误解析）
+
+### AI 服务（ai-service）
+FastAPI + Pydantic v2 配置管理：
+- **ReAct RAG Agent**（`run_rag_agent`）：单一 Agent 循环，支持工具调用（检索、图谱查询）
+- **HybridRetriever**：三路混合检索（Qdrant 语义 + Neo4j GraphRAG + MySQL 关键词），带 degrade 降级
+- **实体抽取**（`entity_extractor.py`）：规则抽取错误码、API ENDPOINT、业务术语
+- **Trace 持久化**（`trace_store.py`）：写入 MySQL agent_trace 表，失败降级为日志
+- **Prompt 管理**（`prompts.py`）：YAML 文件 + 代码内默认值双加载
+- **Model 客户端**（`model_client.py`）：OpenAI 兼容格式，支持 chat/generate
+- **Embedding**（`embedding.py`）：通过 OpenAI 兼容 API 调用真实 embedding 模型
+
+### 数据导入脚本（scripts/）
+- `scripts/ingest_docs.py`：文档入库脚本，支持 MySQL 元数据写入、真实 embedding API 调用、Qdrant 向量入库、Neo4j 图谱写入。关键依赖不可用时文档进入 FAILED 状态，支持 `--dry-run` 验证流程。
+- `scripts/smoke_test.sh`：冒烟测试脚本
+
+### 基础设施（infra/）
+- docker-compose.yml 编排三个服务（backend-java / ai-service / frontend）
+- 统一版本号 1.1.0
 
 ## 2. 你需要手动完成的地方
 
-这些事情需要你的本地环境或账号权限，我不能替你完成：
-
 1. 安装 Docker Desktop。
-2. 本地 debug 检查 `.env`；Docker 演示检查 `.env.docker`。需要真实模型时填写 `LLM_TOKEN`、`LLM_BASE_URL`、`LLM_MODEL`。
-4. 如果要微调，需要准备 GPU 环境，安装 `transformers`、`peft`、`accelerate`。
-5. 如果要接真实企业数据，需要替换 `datasets/` 中的模拟数据。
+2. 本地 debug 检查 `.env`；Docker 运行检查 `.env.docker`。必须填写真实 `LLM_TOKEN`、`LLM_BASE_URL`、`LLM_MODEL`。
+3. 如果要接企业数据，优先走上传、同步任务或专用数据源，不把业务数据硬编码进仓库。
 
 ## 3. 首次运行
 
@@ -29,16 +61,15 @@ make up
 make smoke
 ```
 
-如果你还没准备模型凭证，也可以直接 `make up`。默认 `.env.docker` 里使用 mock 模型，先把工程链路跑通。
+`make up` 只负责拉起服务；模型凭证缺失时 AI 服务会在调用阶段明确报错，不生成离线答案。
 
-## 3.1 本地 debug 运行方式
+### 3.1 本地 debug 运行方式
 
 本地 debug 不需要把 Java 放进容器。推荐只把 MySQL、Redis、Qdrant、Neo4j 作为基础设施容器启动，然后在 IDE 或终端分别跑三个服务和前端：
 
 ```bash
 make infra-up
 make install-frontend
-make run-mcp
 make run-ai
 make run-java
 make run-frontend
@@ -49,136 +80,35 @@ make run-frontend
 - 前端本地开发通过 Vite 代理 `/api -> http://localhost:8080`。
 - Docker 前端通过 Nginx 代理 `/api -> http://backend-java:8080`。
 
-如果 `make up` 失败，优先看 Docker Desktop 是否启动、端口 `3000/3306/6379/6333/7474/7687/8080/8000/8100` 是否被占用。
+### 3.2 数据导入链路
 
-## 3.2 数据导入链路
+`make ingest-a` 会触发 `scripts/ingest_docs.py`：
 
-现在导入脚本已经不是单纯打印：
+1. 扫描 `datasets/kb_docs` 下 `.md` / `.txt` 文件
+2. 读取正文、计算 `content_hash`
+3. 按 `max_chars` 切分 Chunk
+4. 写入 MySQL `kb_document`，状态 `INDEXED`
+5. 调用真实 embedding API 生成向量，写入 Qdrant `kb_chunks` collection
+6. 抽取实体（错误码、API 路径、业务术语），写入 Neo4j 图谱
+7. 任一关键依赖失败时文档进入 `FAILED` 状态
 
-- `scripts/ingest_docs.py` 会尝试写入 `kb_document`、`kb_doc_chunk`，并将本地 hash embedding 写入 Qdrant 的 `kb_chunks` collection。
-- 同一个脚本会抽取错误码、API 路径和业务术语，并写入 Neo4j 的 `Document -> Chunk -> Entity` 图谱。
-- `scripts/ingest_logs.py` 会尝试写入 `obs_log_event`。
-- `scripts/ingest_tickets.py` 会尝试写入 `incident_ticket`。
+### 3.3 Qdrant 和 Neo4j 选型说明
 
-如果 MySQL、Qdrant 或 Python 依赖不可用，脚本会自动降级为 dry-run。这样做是为了让你在没有完整环境时也能演示处理流程。
+- Qdrant 负责向量检索，适合文档 chunk 的语义召回，支持 payload filter（客户、知识库、权限过滤）。
+- Neo4j 负责知识图谱，适合表达 API、错误码、系统、模块、文档片段之间的关系，支持 GraphRAG 扩展。
+- 可替代方案：向量库可替换为 Milvus、pgvector、Elasticsearch/OpenSearch；图数据库可替换为 NebulaGraph、TuGraph。
 
-本地 hash embedding 仅用于打通工程链路，不代表真实语义效果。准备简历项目最终版时，建议替换为：
+### 3.4 当前检索顺序
 
-- `BAAI/bge-large-zh-v1.5`
-- `bge-m3`
-- OpenAI `text-embedding-3-large`
-- Qwen embedding 兼容服务
-
-## 4. 下一步开发顺序
-
-### 第一步：让 AI 服务写入 Trace
-
-已完成基础版：`ai-service/app/core/trace_store.py` 会优先写入 MySQL 的 `agent_trace` 表，失败时降级为日志打印。
-
-### 第二步：让文档导入脚本真正写库
-
-已完成基础版：
-
-- 写入 `kb_document`
-- 写入 `kb_doc_chunk`
-- 使用本地 hash embedding
-- upsert 到 Qdrant
-
-待增强：
-
-- 替换真实 embedding 模型
-- 用 LLM/NER 模型替换当前规则实体抽取
-- 在问答链路里加入 Neo4j 邻居实体召回
-
-## 3.3 Qdrant 和 Neo4j 选型说明
-
-Qdrant 和 Neo4j 都是主流选择，适合简历项目：
-
-- Qdrant 负责向量检索，适合文档 chunk 的语义召回，并支持 payload filter，便于做租户、知识库、权限过滤。
-- Neo4j 负责知识图谱，适合表达 API、错误码、系统、模块、文档片段之间的关系，后续可扩展 GraphRAG。
-- 如果面试官问替代方案，可以说：向量库可替换为 Milvus、pgvector、Elasticsearch/OpenSearch；图数据库可替换为 NebulaGraph、TuGraph，但 Neo4j 的生态和 Cypher 表达更适合单人快速落地。
-
-### 第三步：实现真实 Qdrant 检索
-
-已完成基础版：`ai-service/app/retrieval/hybrid_retriever.py` 会使用本地 hash embedding 查询 Qdrant，并按 `tenant_id` 做 payload filter。Qdrant 没有结果时，会继续使用 MySQL FULLTEXT/LIKE 做关键词检索。
-
-当前实际检索顺序：
-
-1. Qdrant 向量检索
+1. Qdrant 向量检索（真实 embedding 模型）
 2. Neo4j GraphRAG 实体图谱召回
 3. MySQL FULLTEXT/LIKE 关键词检索
-4. mock 兜底证据
+4. 无证据时返回 NO_EVIDENCE，由 Verifier 拒答或提示补充知识
 
-待增强：
+## 4. 后续开发方向
 
-- 替换真实 embedding 模型
-- 增加 ACL 部门过滤
-- 增加 MySQL FULLTEXT 优化或 Elasticsearch/OpenSearch BM25
-- 增加 reranker
-
-### 第四步：实现 BM25 和图谱检索
-
-- MySQL 使用 FULLTEXT/LIKE，后续可替换为 Elasticsearch/OpenSearch
-- Neo4j 已按实体名查询相关 chunk 证据，后续可扩展为实体邻居、多跳路径和关系类型过滤
-- 合并三路召回结果后做 rerank
-
-### 第五步：接入真实 MCP 工具
-
-已完成：
-
-- `search_logs` 查询 `obs_log_event` ✅
-- `search_code` 升级为**全文检索 + Qdrant 向量搜索混合**，移除 mock ✅
-- `search_tickets` 升级为**Qdrant 向量语义匹配 + LIKE 关键词兜底**，移除 mock ✅
-- 搜索接口统一返回 `results: []`，不再返回硬编码 mock 数据 ✅
-- 向量数据通过 `/api/admin/refresh_vectors` 增量刷新，MySQL 与 Qdrant 保持最终一致 ✅
-
-### 第七步：故障诊断 Agent
-
-已完成基础版：
-
-- AI 服务新增 `/api/incident/diagnose`
-- Java 后端新增 `/api/incidents/diagnose`
-- 诊断 Agent 会聚合日志、代码、历史工单证据
-- 输出 summary、root_causes、actions、evidences
-
-待增强：
-
-- 引入真实指标数据，如 QPS、P95、错误率
-- 把诊断报告写入数据库并生成 Markdown/PDF
-
-### 第六步：补测试和评测
-
-- Python Agent 单元测试已完成基础版，覆盖 RAG 编排、Verifier 拒答和故障根因分析（LLM 动态生成）。
-- Java 单元测试已完成基础版，覆盖 ChatService 会话标题生成。
-- 后续继续补 Java Controller 集成测试和带 Testcontainers 的 MySQL 集成测试。
-- `scripts/run_rag_eval.py` 调用真实 `/api/agent/ask`，计算 Recall@5。
-
-运行命令：
-
-```bash
-make test-python
-make test-java
-```
-
-如果本机没有安装 Python 依赖或 Maven，可以先在 Docker/IDE 环境中安装依赖后运行；当前仓库已经提供测试代码和 Makefile 入口。
-
-## 5. 面试演示脚本
-
-你可以按这个顺序演示：
-
-1. 展示 `docker-compose.yml`，说明基础设施。
-2. 展示 MySQL 表结构和 Qdrant collection 设计。
-3. 运行 `make ingest-a`，说明文档如何进入知识库。
-4. 调用 `/api/chat/messages`，展示答案和引用。
-5. 展示 Agent 链路：Router -> Rewrite -> Retriever -> Answer -> Verifier。
-6. 运行故障诊断工具：`/api/tools/search_logs`、`/api/tools/search_code`、`/api/tools/search_tickets`。
-7. 展示评测集和 Recall@5 评测思路。
-
-## 6. 简历描述重点
-
-简历上不要只写“调用大模型 API”。要强调：
-
-- 多路检索：向量检索 + 关键词检索 + 图谱检索。
-- 多 Agent：路由、改写、检索、重排、回答、验证。
-- 工程化：权限过滤、Trace、日志、评测、Docker 部署。
-- 后端经验迁移：Java 微服务故障诊断、日志、代码、工单、Runbook。
+1. **Reranker**：对多路召回结果重排，提升回答质量
+2. **System Prompt 优化闭环**：基于 Trace 和人工复盘，迭代 `default.yaml`
+3. **ACL 过滤增强**：部门、角色级别的文档可见性
+4. **故障诊断 Agent**：日志/代码/工单导入 + MCP 工具协议 + 诊断 Agent
+5. **测试覆盖**：Java Controller 集成测试 + Testcontainers

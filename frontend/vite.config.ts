@@ -1,16 +1,17 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
+const JAVA_BASE = "http://127.0.0.1:8080";
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    // 本地 debug 时前端访问 /api，Vite 代理到本地 Java 后端。
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true
-      }
-    }
+        target: JAVA_BASE,
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     environment: "node"

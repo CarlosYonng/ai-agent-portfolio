@@ -2,117 +2,62 @@
 # Makefile 默认通过 --env-file .env.docker 传入配置；.env 用于本地 debug。
 
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: agent-mysql
-    environment:
-      MYSQL_DATABASE: agentdb
-      MYSQL_USER: agent
-      MYSQL_PASSWORD: agent123
-      MYSQL_ROOT_PASSWORD: root123
-    ports:
-      - "3306:3306"
-    volumes:
-      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot123 --silent"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7
-    container_name: agent-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: agent-qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-
-  neo4j:
-    image: neo4j:5
-    container_name: agent-neo4j
-    environment:
-      NEO4J_AUTH: neo4j/agent123456
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    volumes:
-      - neo4j_data:/data
-
   backend-java:
     build:
       context: ../backend-java
     container_name: agent-backend-java
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:mysql://host.docker.internal:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&connectTimeout=3000&socketTimeout=15000}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-agent}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-agent123}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-host.docker.internal}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD:-}
       AI_SERVICE_BASE_URL: ${AI_SERVICE_BASE_URL:-http://ai-service:8000}
+      DIAGNOSIS_SERVICE_BASE_URL: ${DIAGNOSIS_SERVICE_BASE_URL:-http://host.docker.internal:8200}
+      KB_UPLOAD_DIR: ${KB_UPLOAD_DIR:-/app/data/uploads/kb-docs}
+      LOG_PATH: ${LOG_PATH:-/app/logs}
+      KB_INGEST_SCRIPT_PATH: ${KB_INGEST_SCRIPT_PATH:-/app/scripts/ingest_docs.py}
+      KB_INGEST_MYSQL_DSN: ${KB_INGEST_MYSQL_DSN:-mysql://agent:agent123@host.docker.internal:3306/agentdb}
+    volumes:
+      - ../data/backend/uploads:/app/data/uploads
+      - ../logs/backend:/app/logs
+      - ../scripts:/app/scripts:ro
+      - ../shared:/app/shared:ro
 
   ai-service:
     build:
       context: ../ai-service
     container_name: agent-ai-service
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      neo4j:
-        condition: service_started
     ports:
       - "8000:8000"
     environment:
-      MYSQL_DSN: ${MYSQL_DSN:-mysql://agent:agent123@mysql:3306/agentdb}
-      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
-      NEO4J_HTTP_URL: ${NEO4J_HTTP_URL:-http://neo4j:7474}
+      MYSQL_DSN: ${MYSQL_DSN:-mysql://agent:agent123@host.docker.internal:3306/agentdb}
+      QDRANT_URL: ${QDRANT_URL:-http://host.docker.internal:6333}
+      NEO4J_URI: ${NEO4J_URI:-bolt://host.docker.internal:7687}
+      NEO4J_HTTP_URL: ${NEO4J_HTTP_URL:-http://host.docker.internal:7474}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-agent123456}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      MCP_BASE_URL: ${MCP_BASE_URL:-http://mcp-server:8100}
-      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      REDIS_URL: ${REDIS_URL:-redis://host.docker.internal:6379/0}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production-minimum-256-bits}
+      JWT_ALGORITHMS: ${JWT_ALGORITHMS:-HS256,HS384,HS512}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai-compatible}
       LLM_TOKEN: ${LLM_TOKEN:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_MODEL: ${LLM_MODEL:-mock}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-hash}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-hash}
-      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-128}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-dashscope}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       EMBEDDING_TOKEN: ${EMBEDDING_TOKEN:-}
       DASHSCOPE_TOKEN: ${DASHSCOPE_TOKEN:-}
-
-  mcp-server:
-    build:
-      context: ../mcp-server
-    container_name: agent-mcp-server
-    depends_on:
-      mysql:
-        condition: service_healthy
-    ports:
-      - "8100:8100"
-    environment:
-      MYSQL_DSN: ${MYSQL_DSN:-mysql://agent:agent123@mysql:3306/agentdb}
+      LOG_PATH: ${AI_SERVICE_LOG_PATH:-/app/logs}
+      LOG_LEVEL: ${AI_SERVICE_LOG_LEVEL:-INFO}
+    volumes:
+      - ../logs/ai-service:/app/logs
 
   frontend:
     build:
@@ -121,10 +66,9 @@ services:
     depends_on:
       backend-java:
         condition: service_started
+      ai-service:
+        condition: service_started
     ports:
       - "3000:80"
-
-volumes:
-  mysql_data:
-  qdrant_data:
-  neo4j_data:
+    volumes:
+      - ../logs/frontend:/var/log/nginx

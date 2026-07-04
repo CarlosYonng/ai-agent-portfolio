@@ -18,7 +18,7 @@ logger = logging.getLogger("agent-trace")
 
 def log_trace(
     trace_id: str,
-    tenant_id: int,
+    customer_id: int,
     message_id: int | None,
     node_name: str,
     input_summary: str,
@@ -55,12 +55,12 @@ def log_trace(
             cur.execute(
                 """
                 insert into agent_trace
-                  (trace_id, tenant_id, message_id, node_name, input_summary, output_summary, duration_ms, metadata)
+                  (trace_id, customer_id, message_id, node_name, input_summary, output_summary, duration_ms, metadata)
                 values (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     trace_id,
-                    tenant_id,
+                    customer_id,
                     message_id,
                     node_name,
                     input_summary[:1000],

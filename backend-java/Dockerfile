@@ -22,6 +22,10 @@ FROM eclipse-temurin:21-jre
 LABEL org.opencontainers.image.version="1.1.0" \
       org.opencontainers.image.ref.name="agent-backend-java"
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip \
+    && pip3 install --no-cache-dir --break-system-packages pymysql==1.1.1 python-dotenv==1.0.1 \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/agent-boot/target/agent-boot-*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

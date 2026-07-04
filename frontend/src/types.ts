@@ -6,7 +6,7 @@ export type Health = {
 
 export type KnowledgeBase = {
   id: number;
-  tenantId: number;
+  customerId: number;
   name: string;
   description?: string;
   visibility: string;
@@ -19,8 +19,15 @@ export type KnowledgeDocument = {
   sourceType?: string;
   sourceUri?: string;
   status?: string;
+  ingestStage?: string;
+  progressPercent?: number;
+  chunkTotal?: number;
+  chunkDone?: number;
+  errorMessage?: string;
+  indexedAt?: string;
   version?: number;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 export type Citation = {
@@ -28,7 +35,7 @@ export type Citation = {
   doc_id?: string;
   title?: string;
   score?: number;
-  preview?: string;
+  text?: string;
 };
 
 export type ChatResponse = {
@@ -40,7 +47,7 @@ export type ChatResponse = {
 
 export type ChatSession = {
   id: number;
-  tenantId: number;
+  customerId: number;
   userId: number;
   kbId?: number;
   title: string;
@@ -50,11 +57,12 @@ export type ChatSession = {
 
 export type ChatMessage = {
   id: number;
-  tenantId: number;
+  customerId: number;
   sessionId: number;
   role: "user" | "assistant" | "system";
   content: string;
   traceId?: string;
+  citations?: string;
   createdAt?: string;
 };
 
@@ -65,27 +73,6 @@ export type TraceNode = {
   duration_ms?: number;
   metadata?: string;
   created_at?: string;
-};
-
-export type IncidentResponse = {
-  trace_id?: string;
-  summary?: string;
-  root_causes?: Array<{ cause?: string; confidence?: number; evidence?: string }>;
-  actions?: string[];
-  evidences?: Array<Record<string, unknown>>;
-};
-
-export type IncidentHistory = {
-  id: number;
-  tenantId: number;
-  userId: number;
-  serviceName: string;
-  businessTraceId?: string;
-  agentTraceId?: string;
-  question: string;
-  summary?: string;
-  response_json?: string;
-  createdAt?: string;
 };
 
 export type TraceSummary = {

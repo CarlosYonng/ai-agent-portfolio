@@ -1,8 +1,0 @@
-# MCP 风格工具服务依赖。
-# 第一版用 FastAPI 暴露工具接口，后续可以改造成标准 MCP server。
-fastapi==0.115.5
-uvicorn[standard]==0.32.1
-pydantic==2.10.2
-pymysql==1.1.1
-python-dotenv==1.0.1
-cryptography==45.0.4

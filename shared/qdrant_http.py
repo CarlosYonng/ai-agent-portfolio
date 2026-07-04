@@ -21,7 +21,7 @@ class QdrantHttpClient:
     def ensure_collection(self, collection: str, vector_size: int) -> bool:
         """确保 collection 存在。
 
-        如果 Qdrant 没启动，返回 False，让调用方降级为 dry-run。
+        如果 Qdrant 没启动，返回 False，让正式入库链路标记失败。
         """
 
         exists = self._request("GET", f"/collections/{collection}", None, raise_on_404=False)
@@ -86,4 +86,3 @@ class QdrantHttpClient:
             raise
         except OSError:
             return None
-

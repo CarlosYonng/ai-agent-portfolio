@@ -1,3 +1,0 @@
-{"instruction":"将用户问题改写为适合企业知识库检索的查询，并抽取过滤条件","input":"PAY_5001啥意思？","output":"{\"query\":\"PAY_5001 支付回调 错误码 含义 处理步骤\",\"entities\":[\"PAY_5001\"],\"filters\":{\"source_type\":[\"api_doc\",\"runbook\"]}}"}
-{"instruction":"将用户问题改写为适合企业知识库检索的查询，并抽取过滤条件","input":"traceId=demo-trace-001 的订单接口为什么 500？","output":"{\"query\":\"demo-trace-001 订单创建接口 500 NullPointerException 根因\",\"entities\":[\"demo-trace-001\",\"订单创建接口\"],\"filters\":{\"source_type\":[\"log\",\"code\",\"ticket\"]}}"}
-

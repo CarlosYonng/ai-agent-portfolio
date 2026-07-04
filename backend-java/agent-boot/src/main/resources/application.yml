@@ -3,6 +3,13 @@
 
 server:
   port: 8080
+  shutdown: graceful
+
+redis:
+  lock-prefix: "agent:lock:"
+  cache-prefix: "agent:cache:"
+  rate-prefix: "agent:rate:"
+  blacklist-prefix: "agent:blacklist:"
 
 app:
   version: "@project.version@"
@@ -13,11 +20,33 @@ spring:
   threads:
     virtual:
       enabled: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      username: ${SPRING_DATA_REDIS_USERNAME:}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
   datasource:
-    url: jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: agent
-    password: agent123
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&connectTimeout=3000&socketTimeout=15000}
+    username: ${SPRING_DATASOURCE_USERNAME:agent}
+    password: ${SPRING_DATASOURCE_PASSWORD:agent123}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      connection-timeout: 5000
+      validation-timeout: 3000
+      leak-detection-threshold: 20000
+
+mybatis-plus:
+  configuration:
+    # 避免单条 SQL 无限等待，慢查询应失败并暴露错误，而不是让前端一直 pending。
+    default-statement-timeout: 15
+
+logging:
+  file:
+    path: ${LOG_PATH:logs}
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.yonng.agent: ${LOG_LEVEL_APP:INFO}
 
 management:
   endpoints:
@@ -27,6 +56,31 @@ management:
 
 agent:
   ai-service-base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
+  ai-connect-timeout-ms: ${AI_CONNECT_TIMEOUT_MS:3000}
+  ai-read-timeout-ms: ${AI_READ_TIMEOUT_MS:60000}
+  # 诊断服务（预留组件，当前未部署）
+  diagnosis-service-base-url: ${DIAGNOSIS_SERVICE_BASE_URL:http://localhost:8200}
+  diagnosis-connect-timeout-ms: ${DIAGNOSIS_CONNECT_TIMEOUT_MS:1000}
+  diagnosis-read-timeout-ms: ${DIAGNOSIS_READ_TIMEOUT_MS:2000}
+  kb-upload-dir: ${KB_UPLOAD_DIR:data/uploads/kb-docs}
+  kb-ingest-script-path: ${KB_INGEST_SCRIPT_PATH:}
+  kb-ingest-python: ${KB_INGEST_PYTHON:python3}
+  kb-ingest-timeout-seconds: ${KB_INGEST_TIMEOUT_SECONDS:180}
+  kb-ingest-mysql-dsn: ${KB_INGEST_MYSQL_DSN:}
+  kb-ingest-embedding-provider: ${KB_INGEST_EMBEDDING_PROVIDER:}
+  kb-ingest-embedding-dimensions: ${KB_INGEST_EMBEDDING_DIMENSIONS:}
+  qdrant-url: ${QDRANT_URL:http://localhost:6333}
+  qdrant-collection: ${QDRANT_COLLECTION:kb_chunks}
+  neo4j-http-url: ${NEO4J_HTTP_URL:http://localhost:7474}
+  neo4j-user: ${NEO4J_USER:neo4j}
+  neo4j-password: ${NEO4J_PASSWORD:agent123456}
+  neo4j-database: ${NEO4J_DATABASE:neo4j}
+  index-cleanup-connect-timeout-ms: ${INDEX_CLEANUP_CONNECT_TIMEOUT_MS:3000}
+  index-cleanup-read-timeout-ms: ${INDEX_CLEANUP_READ_TIMEOUT_MS:10000}
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-change-in-production-minimum-256-bits}
+  expiration-hours: ${JWT_EXPIRY_HOURS:24}
 
 ---
 spring:
@@ -34,6 +88,6 @@ spring:
     activate:
       on-profile: docker
   datasource:
-    url: jdbc:mysql://mysql:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: agent
-    password: agent123
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://host.docker.internal:3306/agentdb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&connectTimeout=3000&socketTimeout=15000}
+    username: ${SPRING_DATASOURCE_USERNAME:agent}
+    password: ${SPRING_DATASOURCE_PASSWORD:agent123}

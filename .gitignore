@@ -24,6 +24,7 @@ __pycache__/
 
 # Docker 和运行时临时文件。
 logs/
+data/
 *.log.tmp
 .DS_Store
 

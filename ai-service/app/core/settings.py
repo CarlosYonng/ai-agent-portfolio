@@ -18,20 +18,21 @@ class Settings(BaseSettings):
 
     mysql_dsn: str = "mysql://agent:agent123@localhost:3306/agentdb"
     qdrant_url: str = "http://localhost:6333"
+    jwt_secret: str = "dev-secret-key-change-in-production-minimum-256-bits"
+    jwt_algorithms: str = "HS256,HS384,HS512"
     neo4j_http_url: str = "http://localhost:7474"
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "agent123456"
-    mcp_base_url: str = "http://localhost:8100"
-    llm_provider: str = "mock"
+    llm_provider: str = "openai-compatible"
     llm_token: SecretStr = SecretStr("")
     llm_base_url: str = ""
-    llm_model: str = "mock"
-    embedding_provider: str = "hash"
+    llm_model: str = ""
+    embedding_provider: str = "dashscope"
     embedding_token: SecretStr = SecretStr("")
     dashscope_token: SecretStr = SecretStr("")
-    embedding_base_url: str = ""
-    embedding_model: str = "hash"
-    embedding_dimensions: int = 128
+    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    embedding_model: str = "text-embedding-v4"
+    embedding_dimensions: int = 1024
 
 settings = Settings()

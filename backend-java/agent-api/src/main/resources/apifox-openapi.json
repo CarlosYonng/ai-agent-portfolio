@@ -1,0 +1,636 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Agent Ops API",
+    "description": "Agent Ops 后端接口文档，可直接导入 Apifox 管理接口契约。",
+    "version": "1.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "本地 Java 后端"
+    }
+  ],
+  "tags": [
+    { "name": "Ops", "description": "运维探活和接口文档导出" },
+    { "name": "ExternalAuth", "description": "外部用户认证接口：浏览器登录页和注册页调用" },
+    { "name": "ExternalChat", "description": "外部 RAG 问答接口：浏览器控制台调用" },
+    { "name": "ExternalKnowledge", "description": "外部知识库管理接口：浏览器知识库页面调用" },
+    { "name": "ExternalTrace", "description": "外部 Trace 查询接口：浏览器 Trace 面板调用" },
+    { "name": "ExternalAdminUser", "description": "外部平台用户管理接口：平台管理台调用" },
+    { "name": "ExternalCustomer", "description": "外部客户空间管理接口：平台管理台调用" },
+    { "name": "InternalKnowledge", "description": "内部知识库状态回写和补偿任务接口：受控脚本或内部服务调用" }
+  ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Ops"],
+        "summary": "服务健康检查",
+        "security": [],
+        "responses": {
+          "200": { "description": "服务正常", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } } }
+        }
+      }
+    },
+    "/api/docs/apifox-openapi.json": {
+      "get": {
+        "tags": ["Ops"],
+        "summary": "导出 Apifox 可导入的 OpenAPI 文档",
+        "security": [],
+        "responses": {
+          "200": { "description": "OpenAPI JSON 文档", "content": { "application/json": { "schema": { "type": "object" } } } }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": ["ExternalAuth"],
+        "summary": "用户注册",
+        "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterRequest" } } } },
+        "responses": {
+          "201": { "description": "注册成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["ExternalAuth"],
+        "summary": "用户登录",
+        "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+        "responses": {
+          "200": { "description": "登录成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["ExternalAuth"],
+        "summary": "用户登出",
+        "responses": { "200": { "description": "登出成功" } }
+      }
+    },
+    "/api/chat/messages": {
+      "post": {
+        "tags": ["ExternalChat"],
+        "summary": "提交问题并获取 RAG 回答",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatRequest" } } } },
+        "responses": {
+          "200": { "description": "回答结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/chat/sessions": {
+      "get": {
+        "tags": ["ExternalChat"],
+        "summary": "查询会话列表",
+        "parameters": [
+          { "name": "kbId", "in": "query", "schema": { "type": "integer", "format": "int64" } },
+          { "name": "keyword", "in": "query", "schema": { "type": "string" } },
+          { "name": "startDate", "in": "query", "schema": { "type": "string" } },
+          { "name": "endDate", "in": "query", "schema": { "type": "string" } },
+          { "name": "filterCustomerId", "in": "query", "schema": { "type": "integer", "format": "int64" } }
+        ],
+        "responses": {
+          "200": { "description": "会话列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ChatSessionResponse" } } } } }
+        }
+      }
+    },
+    "/api/chat/sessions/{sessionId}/messages": {
+      "get": {
+        "tags": ["ExternalChat"],
+        "summary": "查询会话消息明细",
+        "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+        "responses": {
+          "200": { "description": "消息列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ChatMessageResponse" } } } } }
+        }
+      }
+    },
+    "/api/kb": {
+      "get": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "查询知识库列表",
+        "responses": {
+          "200": { "description": "知识库列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KnowledgeBaseResponse" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "创建知识库",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KnowledgeBaseRequest" } } } },
+        "responses": {
+          "200": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdResponse" } } } }
+        }
+      }
+    },
+    "/api/kb/{id}": {
+      "get": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "查询知识库详情",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "description": "知识库详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KnowledgeBaseResponse" } } } }
+        }
+      },
+      "put": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "更新知识库",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KnowledgeBaseUpdateRequest" } } } },
+        "responses": { "200": { "description": "更新成功" } }
+      },
+      "delete": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "删除知识库",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": { "200": { "description": "删除成功" } }
+      }
+    },
+    "/api/kb/documents": {
+      "post": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "登记文档元数据",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DocumentCreateRequest" } } } },
+        "responses": {
+          "200": { "description": "登记成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdResponse" } } } }
+        }
+      }
+    },
+    "/api/kb/{kbId}/documents/upload": {
+      "post": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "上传文档并触发入库",
+        "parameters": [{ "$ref": "#/components/parameters/KbId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "title": { "type": "string", "description": "文档标题；为空时使用文件名" },
+                  "file": { "type": "string", "format": "binary", "description": "Markdown 或 TXT 文件" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "上传成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KnowledgeDocumentResponse" } } } }
+        }
+      }
+    },
+    "/api/kb/{kbId}/documents": {
+      "get": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "查询知识库文档列表",
+        "parameters": [{ "$ref": "#/components/parameters/KbId" }],
+        "responses": {
+          "200": { "description": "文档列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/KnowledgeDocumentResponse" } } } } }
+        }
+      }
+    },
+    "/api/kb/documents/{id}": {
+      "get": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "查询文档详情",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "description": "文档详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KnowledgeDocumentResponse" } } } }
+        }
+      },
+      "put": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "更新文档元数据",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DocumentUpdateRequest" } } } },
+        "responses": { "200": { "description": "更新成功" } }
+      },
+      "delete": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "删除文档",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": { "200": { "description": "删除成功" } }
+      }
+    },
+    "/api/kb/documents/{id}/retry": {
+      "post": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "重试文档入库",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "description": "重试已触发", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KnowledgeDocumentResponse" } } } }
+        }
+      }
+    },
+    "/api/kb/documents/{id}/download": {
+      "get": {
+        "tags": ["ExternalKnowledge"],
+        "summary": "下载文档原文件",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "description": "文件流", "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } }
+        }
+      }
+    },
+    "/api/internal/kb/documents/{id}/status": {
+      "patch": {
+        "tags": ["InternalKnowledge"],
+        "summary": "内部回写文档处理状态",
+        "description": "调用方：后端受控脚本或内部服务。浏览器管理台不要直接依赖该路径。",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DocumentStatusUpdateRequest" } } } },
+        "responses": { "200": { "description": "更新成功" } }
+      }
+    },
+    "/api/traces": {
+      "get": {
+        "tags": ["ExternalTrace"],
+        "summary": "查询最近 Trace",
+        "responses": {
+          "200": { "description": "Trace 摘要列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TraceSummaryResponse" } } } } }
+        }
+      }
+    },
+    "/api/traces/{traceId}": {
+      "get": {
+        "tags": ["ExternalTrace"],
+        "summary": "查询 Trace 节点明细",
+        "parameters": [{ "$ref": "#/components/parameters/TraceId" }],
+        "responses": {
+          "200": { "description": "Trace 节点列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AgentTraceNode" } } } } }
+        }
+      }
+    },
+    "/api/traces/stats": {
+      "get": {
+        "tags": ["ExternalTrace"],
+        "summary": "查询 Trace 统计",
+        "parameters": [{ "name": "hours", "in": "query", "schema": { "type": "integer", "default": 24 } }],
+        "responses": {
+          "200": { "description": "聚合统计", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } } }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["ExternalAdminUser"],
+        "summary": "查询用户列表",
+        "parameters": [{ "name": "customerId", "in": "query", "schema": { "type": "integer", "format": "int64" } }],
+        "responses": {
+          "200": { "description": "用户列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/UserManageResponse" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["ExternalAdminUser"],
+        "summary": "创建用户",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserManageRequest" } } } },
+        "responses": {
+          "201": { "description": "创建成功", "content": { "application/json": { "schema": { "type": "integer", "format": "int64" } } } }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "put": {
+        "tags": ["ExternalAdminUser"],
+        "summary": "更新用户",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserManageRequest" } } } },
+        "responses": { "200": { "description": "更新成功" } }
+      }
+    },
+    "/api/admin/users/{id}/status": {
+      "patch": {
+        "tags": ["ExternalAdminUser"],
+        "summary": "启用或禁用用户",
+        "parameters": [
+          { "$ref": "#/components/parameters/Id" },
+          { "name": "enabled", "in": "query", "required": true, "schema": { "type": "boolean" } }
+        ],
+        "responses": { "200": { "description": "状态已更新" } }
+      }
+    },
+    "/api/admin/customers": {
+      "get": {
+        "tags": ["ExternalCustomer"],
+        "summary": "查询客户空间列表",
+        "responses": {
+          "200": { "description": "客户列表", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/CustomerResponse" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["ExternalCustomer"],
+        "summary": "创建客户空间",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CustomerRequest" } } } },
+        "responses": {
+          "201": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CustomerResponse" } } } }
+        }
+      }
+    },
+    "/api/admin/customers/{id}": {
+      "get": {
+        "tags": ["ExternalCustomer"],
+        "summary": "查询客户详情",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": {
+          "200": { "description": "客户详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CustomerResponse" } } } }
+        }
+      },
+      "put": {
+        "tags": ["ExternalCustomer"],
+        "summary": "更新客户空间",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CustomerRequest" } } } },
+        "responses": { "200": { "description": "更新成功" } }
+      },
+      "delete": {
+        "tags": ["ExternalCustomer"],
+        "summary": "删除客户空间",
+        "parameters": [{ "$ref": "#/components/parameters/Id" }],
+        "responses": { "204": { "description": "删除成功" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "parameters": {
+      "Id": { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" } },
+      "KbId": { "name": "kbId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" } },
+      "SessionId": { "name": "sessionId", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" } },
+      "TraceId": { "name": "traceId", "in": "path", "required": true, "schema": { "type": "string" } }
+    },
+    "responses": {
+      "BadRequest": { "description": "请求参数错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiErrorResponse" } } } },
+      "Unauthorized": { "description": "未认证或 Token 失效", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiErrorResponse" } } } },
+      "Forbidden": { "description": "权限不足", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApiErrorResponse" } } } }
+    },
+    "schemas": {
+      "ApiErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "path": { "type": "string" },
+          "traceId": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "UP" },
+          "service": { "type": "string", "example": "agent-backend-java" },
+          "version": { "type": "string", "example": "1.1.0" },
+          "time": { "type": "string" }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["username", "password", "displayName", "inviteCode"],
+        "properties": {
+          "username": { "type": "string", "minLength": 2, "maxLength": 128 },
+          "password": { "type": "string", "minLength": 6, "maxLength": 128, "format": "password" },
+          "displayName": { "type": "string", "maxLength": 128 },
+          "email": { "type": "string", "format": "email" },
+          "inviteCode": { "type": "string", "maxLength": 64 }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "minLength": 2, "maxLength": 128 },
+          "password": { "type": "string", "minLength": 6, "maxLength": 128, "format": "password" }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" },
+          "tokenType": { "type": "string", "example": "Bearer" },
+          "user": { "$ref": "#/components/schemas/UserInfo" }
+        }
+      },
+      "UserInfo": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "integer", "format": "int64" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "username": { "type": "string" },
+          "displayName": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      },
+      "ChatRequest": {
+        "type": "object",
+        "required": ["question"],
+        "properties": {
+          "sessionId": { "type": "integer", "format": "int64", "nullable": true },
+          "kbId": { "type": "integer", "format": "int64", "nullable": true },
+          "question": { "type": "string" }
+        }
+      },
+      "Citation": {
+        "type": "object",
+        "properties": {
+          "chunk_id": { "type": "string" },
+          "doc_id": { "type": "string" },
+          "title": { "type": "string" },
+          "score": { "type": "number", "format": "double", "nullable": true },
+          "text": { "type": "string" }
+        }
+      },
+      "ChatResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": { "type": "integer", "format": "int64" },
+          "traceId": { "type": "string" },
+          "answer": { "type": "string" },
+          "citations": { "type": "array", "items": { "$ref": "#/components/schemas/Citation" } }
+        }
+      },
+      "ChatSessionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "userId": { "type": "integer", "format": "int64" },
+          "kbId": { "type": "integer", "format": "int64", "nullable": true },
+          "title": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ChatMessageResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "sessionId": { "type": "integer", "format": "int64" },
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+          "content": { "type": "string" },
+          "traceId": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "KnowledgeBaseRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "visibility": { "type": "string", "enum": ["PRIVATE", "TEAM", "PUBLIC"], "default": "PRIVATE" }
+        }
+      },
+      "KnowledgeBaseUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "visibility": { "type": "string", "enum": ["PRIVATE", "TEAM", "PUBLIC"] }
+        }
+      },
+      "KnowledgeBaseResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "visibility": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "DocumentCreateRequest": {
+        "type": "object",
+        "required": ["kbId", "title"],
+        "properties": {
+          "kbId": { "type": "integer", "format": "int64" },
+          "title": { "type": "string" },
+          "sourceType": { "type": "string", "default": "markdown" },
+          "sourceUri": { "type": "string" }
+        }
+      },
+      "DocumentUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "sourceType": { "type": "string" },
+          "sourceUri": { "type": "string" }
+        }
+      },
+      "DocumentStatusUpdateRequest": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["PENDING", "INDEXED", "FAILED"] }
+        }
+      },
+      "KnowledgeDocumentResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "kbId": { "type": "integer", "format": "int64" },
+          "title": { "type": "string" },
+          "sourceType": { "type": "string" },
+          "sourceUri": { "type": "string" },
+          "version": { "type": "integer" },
+          "status": { "type": "string" },
+          "ingestStage": { "type": "string" },
+          "progressPercent": { "type": "integer" },
+          "chunkTotal": { "type": "integer", "nullable": true },
+          "chunkDone": { "type": "integer" },
+          "errorMessage": { "type": "string", "nullable": true },
+          "indexedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AgentTraceNode": {
+        "type": "object",
+        "properties": {
+          "node_name": { "type": "string" },
+          "input_summary": { "type": "string" },
+          "output_summary": { "type": "string" },
+          "duration_ms": { "type": "integer" },
+          "metadata": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TraceSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "trace_id": { "type": "string" },
+          "node_count": { "type": "integer" },
+          "latest_node": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UserManageRequest": {
+        "type": "object",
+        "required": ["username", "displayName", "roleCode"],
+        "properties": {
+          "username": { "type": "string", "minLength": 2, "maxLength": 128 },
+          "password": { "type": "string", "minLength": 6, "maxLength": 128, "format": "password" },
+          "displayName": { "type": "string", "maxLength": 128 },
+          "email": { "type": "string" },
+          "roleCode": { "type": "string" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "status": { "type": "string" }
+        }
+      },
+      "UserManageResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "customerId": { "type": "integer", "format": "int64" },
+          "username": { "type": "string" },
+          "displayName": { "type": "string" },
+          "email": { "type": "string" },
+          "roleCode": { "type": "string" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      },
+      "CustomerRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 128 },
+          "contactName": { "type": "string", "maxLength": 128 },
+          "contactEmail": { "type": "string", "maxLength": 256 },
+          "status": { "type": "string" }
+        }
+      },
+      "CustomerResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "name": { "type": "string" },
+          "contactName": { "type": "string" },
+          "contactEmail": { "type": "string" },
+          "inviteCode": { "type": "string" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string" }
+        }
+      },
+      "IdResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" }
+        }
+      }
+    }
+  }
+}

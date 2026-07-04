@@ -3,15 +3,18 @@ import type {
   ChatResponse,
   ChatSession,
   Health,
-  IncidentHistory,
-  IncidentResponse,
   KnowledgeBase,
   KnowledgeDocument,
   TraceSummary,
   TraceNode
 } from "./types";
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type ApiRequestInit = RequestInit & {
+  timeoutMs?: number;
+};
+
+const DEFAULT_API_TIMEOUT_MS = 15000;
+const LONG_RUNNING_API_TIMEOUT_MS = 60000;
 
 type ErrorCopy = {
   title: string;
@@ -21,9 +24,7 @@ type ErrorCopy = {
 export type ApiErrorPayload = {
   code?: string;
   message?: string;
-  path?: string;
   traceId?: string;
-  timestamp?: string;
 };
 
 const ERROR_COPY: Record<string, ErrorCopy> = {
@@ -35,13 +36,121 @@ const ERROR_COPY: Record<string, ErrorCopy> = {
     title: "AI 能力暂时无法使用",
     message: "当前模型或工具服务没有返回有效结果，请稍后重试。"
   },
+  DOWNSTREAM_AI_ERROR: {
+    title: "AI 能力暂时无法使用",
+    message: "AI 服务调用失败，请稍后重试。"
+  },
   INTERNAL_ERROR: {
     title: "操作未完成",
-    message: "系统处理请求时遇到问题，请稍后重试。"
+    message: "系统内部异常，请联系维护人员处理。"
+  },
+  SYSTEM_SCHEMA_MISMATCH: {
+    title: "客户创建未完成",
+    message: "系统配置暂时不可用，请联系维护人员处理。"
+  },
+  SYSTEM_REQUEST_SERIALIZATION_FAILED: {
+    title: "服务内部请求异常",
+    message: "服务内部请求组装失败，请联系维护人员处理。"
   },
   VALIDATION_ERROR: {
     title: "请检查输入内容",
     message: "部分输入不符合要求，请调整后再提交。"
+  },
+  REQUEST_VALIDATION_FAILED: {
+    title: "请检查输入内容",
+    message: "请求参数不合法，请调整后再提交。"
+  },
+  AUTH_INVALID_CREDENTIALS: {
+    title: "登录失败",
+    message: "用户名或密码错误。"
+  },
+  AUTH_ACCOUNT_DISABLED: {
+    title: "账号不可用",
+    message: "账户已被禁用。"
+  },
+  AUTH_INVITE_CODE_INVALID: {
+    title: "邀请码不可用",
+    message: "邀请码无效或客户已停用。"
+  },
+  AUTH_REQUIRED: {
+    title: "需要重新登录",
+    message: "登录状态已失效，请重新登录。"
+  },
+  PERMISSION_DENIED: {
+    title: "没有操作权限",
+    message: "当前账号没有权限执行这个操作。"
+  },
+  USER_USERNAME_EXISTS: {
+    title: "用户名不可用",
+    message: "用户名已存在。"
+  },
+  USER_NOT_FOUND: {
+    title: "用户不存在",
+    message: "用户不存在，可能已被删除。"
+  },
+  USER_PASSWORD_REQUIRED: {
+    title: "缺少密码",
+    message: "密码不能为空。"
+  },
+  USER_ROLE_INVALID: {
+    title: "角色不合法",
+    message: "请选择有效角色。"
+  },
+  CUSTOMER_NOT_FOUND: {
+    title: "客户不存在",
+    message: "客户不存在，可能已被删除。"
+  },
+  CUSTOMER_NAME_EXISTS: {
+    title: "客户名称不可用",
+    message: "客户名称已存在。"
+  },
+  CUSTOMER_REQUIRED: {
+    title: "请选择客户",
+    message: "客户用户必须选择所属客户。"
+  },
+  CUSTOMER_INACTIVE: {
+    title: "客户不可用",
+    message: "所属客户不存在或已停用。"
+  },
+  CUSTOMER_INVITE_CODE_GENERATE_FAILED: {
+    title: "邀请码生成失败",
+    message: "客户邀请码生成失败，请稍后重试。"
+  },
+  KB_NOT_FOUND: {
+    title: "知识库不存在",
+    message: "知识库不存在，可能已被删除。"
+  },
+  KB_VISIBILITY_INVALID: {
+    title: "知识库可见性不合法",
+    message: "visibility 仅支持 PRIVATE/TEAM/PUBLIC。"
+  },
+  DOCUMENT_NOT_FOUND: {
+    title: "文档不存在",
+    message: "文档不存在，可能已被删除。"
+  },
+  DOCUMENT_STATUS_INVALID: {
+    title: "文档状态不合法",
+    message: "status 仅支持 PENDING/INDEXED/FAILED。"
+  },
+  DOCUMENT_UPLOAD_INVALID: {
+    title: "文档格式不支持",
+    message: "请上传 Markdown 或 TXT 文档。"
+  },
+  DOCUMENT_INGEST_FAILED: {
+    title: "自动入库失败",
+    message: "文档已保存，但索引流程没有完成，请查看状态后重试。"
+  },
+  DOCUMENT_SOURCE_FILE_MISSING: {
+    title: "源文件不可下载",
+    message: "文档源文件不存在，请重新上传后再下载。"
+  },
+  CHAT_SESSION_NOT_FOUND: {
+    title: "会话不可访问",
+    message: "会话不存在或无权访问。"
+  },
+  TRACE_NOT_FOUND: {
+    title: "Trace 不可访问",
+    message: "Trace 不存在或无权访问。"
   },
   MISSING_PARAMETER: {
     title: "缺少必要信息",
@@ -77,6 +186,36 @@ const ERROR_COPY: Record<string, ErrorCopy> = {
   }
 };
 
+const SERVER_MESSAGE_CODES = new Set([
+  "VALIDATION_ERROR",
+  "REQUEST_VALIDATION_FAILED",
+  "MISSING_PARAMETER",
+  "TYPE_MISMATCH",
+  "BAD_REQUEST_BODY",
+  "AUTH_INVALID_CREDENTIALS",
+  "AUTH_ACCOUNT_DISABLED",
+  "AUTH_INVITE_CODE_INVALID",
+  "AUTH_REQUIRED",
+  "PERMISSION_DENIED",
+  "USER_USERNAME_EXISTS",
+  "USER_NOT_FOUND",
+  "USER_PASSWORD_REQUIRED",
+  "USER_ROLE_INVALID",
+  "CUSTOMER_NOT_FOUND",
+  "CUSTOMER_NAME_EXISTS",
+  "CUSTOMER_REQUIRED",
+  "CUSTOMER_INACTIVE",
+  "KB_NOT_FOUND",
+  "KB_VISIBILITY_INVALID",
+  "DOCUMENT_NOT_FOUND",
+  "DOCUMENT_STATUS_INVALID",
+  "DOCUMENT_UPLOAD_INVALID",
+  "DOCUMENT_INGEST_FAILED",
+  "DOCUMENT_SOURCE_FILE_MISSING",
+  "CHAT_SESSION_NOT_FOUND",
+  "TRACE_NOT_FOUND"
+]);
+
 export class ApiError extends Error {
   status: number;
   payload?: ApiErrorPayload;
@@ -100,7 +239,7 @@ export class ApiError extends Error {
 function toUserCopy(status: number, payload?: ApiErrorPayload): ErrorCopy {
   const code = payload?.code;
   if (code && ERROR_COPY[code]) {
-    if (code === "VALIDATION_ERROR" && payload?.message) {
+    if (SERVER_MESSAGE_CODES.has(code) && payload?.message) {
       return { ...ERROR_COPY[code], message: payload.message };
     }
     return ERROR_COPY[code];
@@ -165,7 +304,14 @@ function parseErrorResponse(response: Response, text: string) {
   let fallbackText = `${response.status} ${response.statusText}`;
   if (text) {
     try {
-      payload = JSON.parse(text) as ApiErrorPayload;
+      const result = JSON.parse(text) as Record<string, unknown>;
+      if (result.code && typeof result.code === "string" && result.code !== "ok") {
+        payload = {
+          code: result.code,
+          message: typeof result.message === "string" ? result.message : undefined,
+          traceId: typeof result.traceId === "string" ? result.traceId : undefined,
+        };
+      }
     } catch {
       fallbackText = text;
     }
@@ -173,46 +319,84 @@ function parseErrorResponse(response: Response, text: string) {
   return new ApiError(response.status, response.statusText, payload, fallbackText);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiRequest<T>(path: string, init?: ApiRequestInit): Promise<T> {
   let response: Response;
+  const { timeoutMs, ...requestInit } = (init ?? {}) as ApiRequestInit;
+  const effectiveTimeoutMs = timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), effectiveTimeoutMs);
   try {
+    const token = localStorage.getItem("token");
+    const isFormData = requestInit.body instanceof FormData;
+    const headers: Record<string, string> = {
+      ...requestInit.headers as Record<string, string>
+    };
+    if (!isFormData) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     response = await fetch(path, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers
-      }
+      ...requestInit,
+      headers,
+      signal: requestInit.signal ?? controller.signal
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "无法连接服务";
-    const apiError = new ApiError(0, "NETWORK_ERROR", { code: "NETWORK_ERROR", message, path });
+    const message = error instanceof DOMException && error.name === "AbortError"
+      ? "请求等待超时，请确认后端服务是否为最新版本后重试。"
+      : error instanceof Error ? error.message : "无法连接服务";
+    const apiError = new ApiError(0, "NETWORK_ERROR", { code: "NETWORK_ERROR", message });
     notifyApiError(apiError);
     throw apiError;
+  } finally {
+    window.clearTimeout(timeout);
   }
   const text = await response.text();
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.hash = "#/login";
+    }
     const error = parseErrorResponse(response, text);
     notifyApiError(error);
     throw error;
   }
-  return (text ? JSON.parse(text) : undefined) as T;
+  // 统一响应包装：ApiResult<T>，提取 data 字段返回给调用方
+  if (text) {
+    try {
+      const result = JSON.parse(text) as { code: string; message: string; data: T; traceId?: string };
+      // 非 2xx 已在前面拦截，到这里 code 一定为 "ok"
+      if (result.code !== "ok" && result.code !== undefined) {
+        const apiError = new ApiError(response.status, response.statusText,
+          { code: result.code, message: result.message, traceId: result.traceId });
+        notifyApiError(apiError);
+        throw apiError;
+      }
+      return result.data as T;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      // JSON 解析失败（非标准响应），退化为原始行为
+      throw new ApiError(response.status, response.statusText);
+    }
+  }
+  return undefined as T;
 }
 
 export function getHealth() {
-  return request<Health>("/api/health");
+  return apiRequest<Health>("/api/health");
 }
 
-export function listKnowledgeBases(tenantId: number) {
-  return request<KnowledgeBase[]>(`/api/kb?tenantId=${tenantId}`);
+export function listKnowledgeBases() {
+  return apiRequest<KnowledgeBase[]>("/api/kb");
 }
 
 export function createKnowledgeBase(payload: {
-  tenantId: number;
   name: string;
   description: string;
   visibility: string;
 }) {
-  return request<{ id: number }>("/api/kb", {
+  return apiRequest<{ id: number }>("/api/kb", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -226,32 +410,51 @@ export function updateKnowledgeBase(
     visibility?: string;
   }
 ) {
-  return request<void>(`/api/kb/${id}`, {
+  return apiRequest<void>(`/api/kb/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });
 }
 
 export function deleteKnowledgeBase(id: number) {
-  return request<void>(`/api/kb/${id}`, {
+  return apiRequest<void>(`/api/kb/${id}`, {
     method: "DELETE"
   });
 }
 
-export function listDocuments(tenantId: number, kbId: number) {
-  return request<KnowledgeDocument[]>(`/api/kb/${kbId}/documents?tenantId=${tenantId}`);
+export function listDocuments(kbId: number) {
+  return apiRequest<KnowledgeDocument[]>(`/api/kb/${kbId}/documents`);
 }
 
 export function createDocument(payload: {
-  tenantId: number;
   kbId: number;
   title: string;
   sourceType: string;
   sourceUri: string;
 }) {
-  return request<{ id: number }>("/api/kb/documents", {
+  return apiRequest<void>("/api/kb/documents", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export function uploadDocument(kbId: number, payload: { title?: string; file: File }) {
+  const form = new FormData();
+  form.append("file", payload.file);
+  if (payload.title) {
+    form.append("title", payload.title);
+  }
+  return apiRequest<KnowledgeDocument>(`/api/kb/${kbId}/documents/upload`, {
+    method: "POST",
+    body: form,
+    timeoutMs: 180000
+  });
+}
+
+export function retryDocumentIngest(id: number) {
+  return apiRequest<KnowledgeDocument>(`/api/kb/documents/${id}/retry`, {
+    method: "POST",
+    timeoutMs: 30000
   });
 }
 
@@ -263,63 +466,85 @@ export function updateDocument(
     sourceUri?: string;
   }
 ) {
-  return request<void>(`/api/kb/documents/${id}`, {
+  return apiRequest<void>(`/api/kb/documents/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload)
   });
 }
 
 export function deleteDocument(id: number) {
-  return request<void>(`/api/kb/documents/${id}`, {
+  return apiRequest<void>(`/api/kb/documents/${id}`, {
     method: "DELETE"
   });
 }
 
-export function updateDocumentStatus(id: number, status: string) {
-  return request<void>(`/api/kb/documents/${id}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ status })
-  });
+export async function downloadDocumentFile(id: number) {
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(`/api/kb/documents/${id}/download`, { headers });
+  if (!response.ok) {
+    const text = await response.text();
+    const error = parseErrorResponse(response, text);
+    notifyApiError(error);
+    throw error;
+  }
+  const blob = await response.blob();
+  return {
+    blob,
+    filename: filenameFromDisposition(response.headers.get("Content-Disposition")) ?? `document-${id}`,
+  };
 }
 
-export function askChat(payload: { tenantId: number; userId: number; sessionId?: number; kbId?: number; question: string }) {
-  return request<ChatResponse>("/api/chat/messages", {
+function filenameFromDisposition(disposition: string | null) {
+  if (!disposition) {
+    return null;
+  }
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]);
+  }
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return plainMatch?.[1] ?? null;
+}
+
+export function askChat(payload: { sessionId?: number; kbId?: number; question: string }) {
+  return apiRequest<ChatResponse>("/api/chat/messages", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    timeoutMs: LONG_RUNNING_API_TIMEOUT_MS
   });
 }
 
-export function listChatSessions(tenantId: number, userId: number, kbId?: number) {
-  const suffix = kbId ? `&kbId=${kbId}` : "";
-  return request<ChatSession[]>(`/api/chat/sessions?tenantId=${tenantId}&userId=${userId}${suffix}`);
+export function listChatSessions(params?: {
+  kbId?: number;
+  keyword?: string;
+  startDate?: string;
+  endDate?: string;
+  filterCustomerId?: number;
+}) {
+  const query = new URLSearchParams();
+  if (params?.kbId) query.set("kbId", String(params.kbId));
+  if (params?.keyword) query.set("keyword", params.keyword);
+  if (params?.startDate) query.set("startDate", params.startDate);
+  if (params?.endDate) query.set("endDate", params.endDate);
+  if (params?.filterCustomerId) query.set("filterCustomerId", String(params.filterCustomerId));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiRequest<ChatSession[]>(`/api/chat/sessions${suffix}`);
 }
 
-export function listChatMessages(tenantId: number, sessionId: number) {
-  return request<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages?tenantId=${tenantId}`);
+export function listChatMessages(sessionId: number) {
+  return apiRequest<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`);
 }
 
 export function getTrace(traceId: string) {
-  return request<TraceNode[]>(`/api/traces/${encodeURIComponent(traceId)}`);
-}
-
-export function listTraceSummaries(tenantId: number) {
-  return request<TraceSummary[]>(`/api/traces?tenantId=${tenantId}`);
-}
-
-export function diagnoseIncident(payload: {
-  tenantId: number;
-  userId: number;
-  service: string;
-  question: string;
-  traceId?: string;
-  timeRange: string;
-}) {
-  return request<IncidentResponse>("/api/incidents/diagnose", {
-    method: "POST",
-    body: JSON.stringify(payload as Record<string, JsonValue>)
+  return apiRequest<TraceNode[]>(`/api/traces/${encodeURIComponent(traceId)}`, {
+    timeoutMs: 10000
   });
 }
 
-export function listIncidentHistory(tenantId: number, userId: number) {
-  return request<IncidentHistory[]>(`/api/incidents/history?tenantId=${tenantId}&userId=${userId}`);
-}
+export function listTraceSummaries() {
+  return apiRequest<TraceSummary[]>("/api/traces");
+	}

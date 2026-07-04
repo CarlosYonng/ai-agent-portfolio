@@ -51,53 +51,65 @@ class Neo4jHttpClient:
             return False
 
     def ensure_constraints(self) -> bool:
-        """创建基础唯一约束。"""
+        """创建基础唯一约束（含客户隔离）。"""
 
         ok_entity = self.run(
-            "CREATE CONSTRAINT entity_name_tenant IF NOT EXISTS "
-            "FOR (e:Entity) REQUIRE (e.tenant_id, e.name, e.type) IS UNIQUE"
+            "CREATE CONSTRAINT entity_name_customer IF NOT EXISTS "
+            "FOR (e:Entity) REQUIRE (e.customer_id, e.name, e.type) IS UNIQUE"
         )
         ok_doc = self.run(
-            "CREATE CONSTRAINT document_id IF NOT EXISTS "
-            "FOR (d:Document) REQUIRE d.doc_id IS UNIQUE"
+            "CREATE CONSTRAINT document_customer IF NOT EXISTS "
+            "FOR (d:Document) REQUIRE (d.customer_id, d.doc_id) IS UNIQUE"
         )
         ok_chunk = self.run(
-            "CREATE CONSTRAINT chunk_id IF NOT EXISTS "
-            "FOR (c:Chunk) REQUIRE c.chunk_id IS UNIQUE"
+            "CREATE CONSTRAINT chunk_customer IF NOT EXISTS "
+            "FOR (c:Chunk) REQUIRE (c.customer_id, c.chunk_id) IS UNIQUE"
         )
         return ok_entity and ok_doc and ok_chunk
 
     def upsert_document_graph(
         self,
-        tenant_id: int,
+        customer_id: int,
+        kb_id: int,
         doc_id: str,
         title: str,
         chunk_id: str,
         chunk_preview: str,
-        entities: list[dict[str, str]],
+        entities: list[dict[str, Any]],
     ) -> bool:
-        """写入 Document-Chunk-Entity 图谱关系。"""
+        """写入 Document-Chunk-Entity 图谱关系。
+
+        学习版图谱只保留实体抽取最核心的信息：实体名、类型、来源、置信度、
+        出现次数和原文 mention。这样更容易理解 GraphRAG 的基本闭环。
+        """
 
         cypher = """
-        MERGE (d:Document {doc_id: $doc_id})
-          SET d.tenant_id = $tenant_id, d.title = $title
-        MERGE (c:Chunk {chunk_id: $chunk_id})
-          SET c.tenant_id = $tenant_id, c.preview = $chunk_preview
+        MERGE (d:Document {doc_id: $doc_id, customer_id: $customer_id})
+          SET d.kb_id = $kb_id, d.title = $title
+        MERGE (c:Chunk {chunk_id: $chunk_id, customer_id: $customer_id})
+          SET c.kb_id = $kb_id, c.preview = $chunk_preview
         MERGE (d)-[:HAS_CHUNK]->(c)
         WITH c
         UNWIND $entities AS entity
-        MERGE (e:Entity {tenant_id: $tenant_id, name: entity.name, type: entity.type})
-        MERGE (c)-[:MENTIONS]->(e)
+        MERGE (e:Entity {customer_id: $customer_id, name: entity.name, type: entity.type})
+          SET e.source = coalesce(entity.source, 'unknown'),
+              e.confidence = coalesce(entity.confidence, 0.0),
+              e.updated_at = datetime()
+        MERGE (c)-[m:MENTIONS]->(e)
+          SET m.surfaces = [mention IN coalesce(entity.mentions, []) | mention.text],
+              m.occurrence_count = coalesce(entity.occurrence_count, size(coalesce(entity.mentions, []))),
+              m.confidence = coalesce(entity.confidence, 0.0),
+              m.source = coalesce(entity.source, 'unknown')
         """
         return self.run(
             cypher,
             {
-                "tenant_id": tenant_id,
+                "customer_id": customer_id,
+                "kb_id": kb_id,
                 "doc_id": doc_id,
                 "title": title,
                 "chunk_id": chunk_id,
-                "chunk_preview": chunk_preview[:240],
+                "chunk_preview": chunk_preview,
                 "entities": entities,
             },
         )
-

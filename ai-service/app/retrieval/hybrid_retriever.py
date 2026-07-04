@@ -1,7 +1,11 @@
 """混合检索器。
 
-当前实现优先走 Qdrant HTTP 检索，失败时返回 mock 证据。
-这样既能在 Docker 环境中跑真实链路，也能在没有基础设施时完成接口演示。
+采用 Pattern A 设计：
+- 主检索走 Qdrant，payload 中存完整 chunk 文本，检索后直接喂给 LLM。
+- Neo4j 图谱检索作为辅助路径，从实体查找关联 chunk。
+- MySQL 不再参与检索链路，只负责页面管理和查询过滤。
+
+真实召回为空时交给 Agent 明确告知未命中。
 """
 
 from __future__ import annotations
@@ -18,7 +22,19 @@ COLLECTION_NAME = "kb_chunks"
 
 
 class HybridRetriever:
-    """企业知识库混合检索入口。"""
+    """企业知识库混合检索入口。
+
+    当前召回策略（v1，无 reranker）：
+      1. Qdrant bi-encoder 余弦距离召回 top 8
+      2. 有结果直接返回（不级联）
+      3. Qdrant 无结果 → Neo4j 图谱精确匹配
+      4. 都没有 → 空列表
+
+    后续可优化方向：
+      - Qdrant limit 提升到 20~50 + 接入 cross-encoder reranker（推荐 LLM 打分方式，
+        无需引入新模型依赖），由 reranker 重排后取 top 4
+      - 或接入 Cohere/Jina Rerank API，精度更高但需额外 API key
+    """
 
     def __init__(self) -> None:
         self.qdrant = QdrantHttpClient(settings.qdrant_url)
@@ -28,19 +44,24 @@ class HybridRetriever:
         """执行检索。
 
         检索策略：
-        1. 根据配置生成 query vector，演示环境可切到 DashScope 百炼真实 embedding。
-        2. Qdrant 按 tenant_id 过滤检索。
-        3. 如果 query 中能抽到实体，尝试 Neo4j 图谱召回相关 chunk。
-        4. 如果 Qdrant/Neo4j 都没有结果，尝试 MySQL 全文/LIKE 检索。
-        5. 如果数据库也不可用，返回 mock 证据。
+        1. 根据配置生成 query vector，走 Qdrant 按 customer_id 过滤检索。
+        2. 如果 Qdrant 命中，直接返回（payload 含完整 chunk 文本）。
+        3. 如果 Qdrant 无结果，尝试 Neo4j 图谱召回。
+        4. 都没有则返回空列表，由 Agent 生成未命中回答。
         """
 
-        tenant_id = filters.get("tenant_id", 1)
+        customer_id = filters.get("customer_id")
         kb_id = filters.get("kb_id")
         vector = await embed_text(query)
-        vector_filters = {"tenant_id": tenant_id}
+        vector_filters = {}
+        if customer_id and customer_id > 0:
+            vector_filters["customer_id"] = customer_id
         if kb_id is not None:
             vector_filters["kb_id"] = kb_id
+        # limit=8: 无 reranker 时，Qdrant 的排序就是最终排序。
+        # 前 8 个已经是余弦距离最接近的，超过 8 个取 top-k 也轮不到它们。
+        # 如果将来上了 reranker，再把 limit 提到 20 以上——reranker 会重新排序，
+        # 靠后的候选有可能被捞回来。
         qdrant_results = self.qdrant.search(
             COLLECTION_NAME,
             vector=vector,
@@ -50,24 +71,12 @@ class HybridRetriever:
         if qdrant_results:
             return [self._from_qdrant(point) for point in qdrant_results]
 
-        graph_results = self._graph_search(query, int(tenant_id))
+        graph_customer_id = int(customer_id) if customer_id and customer_id > 0 else None
+        graph_results = self._graph_search(query, graph_customer_id, int(kb_id) if kb_id is not None else None)
         if graph_results:
             return graph_results
 
-        mysql_results = self._mysql_search(query, int(tenant_id), int(kb_id) if kb_id is not None else None)
-        if mysql_results:
-            return mysql_results
-
-        return [
-            {
-                "chunk_id": "mock_chunk_001",
-                "doc_id": "mock_doc_001",
-                "title": "企业知识库 RAG 设计说明",
-                "score": 0.82,
-                "preview": f"租户 {tenant_id} 的检索问题为：{query}。这里未来会替换为 Qdrant + BM25 + Neo4j 的真实召回结果。",
-                "source": "mock",
-            }
-        ]
+        return []
 
     def _from_qdrant(self, point: dict[str, Any]) -> dict[str, Any]:
         """把 Qdrant point 转成 Agent 统一证据格式。"""
@@ -77,101 +86,68 @@ class HybridRetriever:
             "chunk_id": str(payload.get("chunk_id", point.get("id"))),
             "doc_id": str(payload.get("doc_id", "")),
             "title": str(payload.get("title", "Untitled")),
-            "score": float(point.get("score", 0.0)),
-            "preview": str(payload.get("preview", "")),
+            "score": max(0.0, 1.0 - float(point.get("score", 0.0))),
+            "text": str(payload.get("text", "")),
             "source": "qdrant",
         }
 
-    def _graph_search(self, query: str, tenant_id: int) -> list[dict[str, Any]]:
+    def _graph_search(self, query: str, customer_id: int | None, kb_id: int | None) -> list[dict[str, Any]]:
         """使用 Neo4j 根据实体关系召回 chunk。
 
         这就是 GraphRAG 的最小闭环：问题 -> 实体 -> 图谱邻居 -> 文档片段。
+
+        Args:
+            query: 用户问题
+            customer_id: 客户 ID，None 表示管理员模式（不按客户过滤）
+            kb_id: 知识库 ID，None 表示不按知识库过滤
         """
 
         entities = extract_entities(query)
         if not entities:
             return []
 
-        entity_names = [entity["name"] for entity in entities]
+        entity_names = self._entity_names(entities)
+        if not entity_names:
+            return []
         cypher = """
         MATCH (e:Entity)<-[:MENTIONS]-(c:Chunk)<-[:HAS_CHUNK]-(d:Document)
-        WHERE e.tenant_id = $tenant_id AND e.name IN $entity_names
+        WHERE e.name IN $entity_names
+          AND ($customer_id IS NULL OR e.customer_id = $customer_id)
+          AND ($customer_id IS NULL OR c.customer_id = $customer_id)
+          AND ($customer_id IS NULL OR d.customer_id = $customer_id)
+          AND ($kb_id IS NULL OR d.kb_id = $kb_id)
         RETURN c.chunk_id AS chunk_id,
                d.doc_id AS doc_id,
                d.title AS title,
-               c.preview AS preview,
+               c.preview AS text,
                collect(distinct e.name) AS matched_entities
         LIMIT 8
         """
-        rows = self.neo4j.query(cypher, {"tenant_id": tenant_id, "entity_names": entity_names})
+        rows = self.neo4j.query(cypher, {"customer_id": customer_id, "kb_id": kb_id, "entity_names": entity_names})
         return [
             {
                 "chunk_id": str(row.get("chunk_id", "")),
                 "doc_id": str(row.get("doc_id", "")),
                 "title": str(row.get("title", "Graph Evidence")),
-                "score": 0.70,
-                "preview": str(row.get("preview", "")),
+                "text": str(row.get("text", "")),
                 "source": "neo4j",
                 "matched_entities": row.get("matched_entities", []),
             }
             for row in rows
         ]
 
-    def _mysql_search(self, query: str, tenant_id: int, kb_id: int | None) -> list[dict[str, Any]]:
-        """使用 MySQL FULLTEXT/LIKE 做关键词检索。
+    def _entity_names(self, entities: list[dict[str, Any]]) -> list[str]:
+        """生成图谱召回用实体名集合。"""
 
-        这里是 Qdrant 的兜底路径，也能体现混合检索思路。
-        """
-
-        try:
-            from app.core.mysql import connect_mysql
-        except ImportError:
-            return []
-
-        sql = """
-            select
-              c.id as chunk_id,
-              c.doc_id,
-              d.title,
-              c.content,
-              case
-                when match(c.title_path, c.content) against (%s in natural language mode) > 0
-                then match(c.title_path, c.content) against (%s in natural language mode)
-                else 0.1
-              end as score
-            from kb_doc_chunk c
-            join kb_document d on d.id = c.doc_id
-            where c.tenant_id = %s
-              and (%s is null or d.kb_id = %s)
-              and (
-                match(c.title_path, c.content) against (%s in natural language mode)
-                or c.content like %s
-                or d.title like %s
-              )
-            order by score desc
-            limit 8
-        """
-        try:
-            conn = connect_mysql(dict_cursor=True)
-            with conn.cursor() as cur:
-                like_query = f"%{query}%"
-                cur.execute(sql, (query, query, tenant_id, kb_id, kb_id, query, like_query, like_query))
-                rows = cur.fetchall()
-            conn.close()
-        except Exception:
-            return []
-
-        return [
-            {
-                "chunk_id": str(row["chunk_id"]),
-                "doc_id": str(row["doc_id"]),
-                "title": str(row["title"]),
-                "score": float(row["score"]),
-                "preview": str(row["content"])[:240],
-                "source": "mysql",
-            }
-            for row in rows
-        ]
+        names: list[str] = []
+        seen: set[str] = set()
+        for entity in entities:
+            name = str(entity.get("name") or "").strip()
+            key = name.casefold()
+            if name and key not in seen:
+                names.append(name)
+                seen.add(key)
+        return names
 
 
 hybrid_retriever = HybridRetriever()
