@@ -46,6 +46,9 @@ ingest-a:
 smoke:
 	bash scripts/smoke_test.sh
 
+smoke-alert:
+	bash scripts/send_grafana_alert_smoke.sh
+
 test-python:
 	cd ai-service && python -m pytest tests
 

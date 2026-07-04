@@ -41,6 +41,12 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Prometheus registry 让 Actuator 暴露 /actuator/prometheus，供 Prometheus 抓取真实业务指标。 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <!-- MyBatis Plus Spring Boot 自动配置集中在启动层，Mapper 接口仍放在基础设施层。 -->
         <dependency>
             <groupId>com.baomidou</groupId>

@@ -1,0 +1,181 @@
+groups:
+  - name: ai-agent-portfolio-alerts
+    interval: 30s
+    rules:
+      - alert: PortfolioAiServiceTimeout
+        expr: |
+          (
+            sum(rate(portfolio_chat_ai_service_errors_total{error_type="AIServiceTimeout"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_chat_requests_total[5m])), 1)
+          ) >= 0.02
+          or
+          histogram_quantile(0.95, sum(rate(portfolio_chat_ai_service_duration_seconds_bucket[5m])) by (le)) >= 3
+          or
+          sum(increase(portfolio_chat_ai_service_errors_total{error_type="AIServiceTimeout"}[5m])) >= 10
+        for: 1m
+        labels:
+          service: ai-agent-portfolio
+          endpoint: /api/chat/messages
+          exception_type: AIServiceTimeout
+          severity: P1
+          error_rate: "{{ $value }}"
+          p95_latency: "{{ $value }}"
+          affected_requests: "{{ $value }}"
+        annotations:
+          summary: ai-agent-portfolio chat messages are timing out while calling ai-service
+          description: Real alert generated from Java backend -> ai-service metrics; check portfolio-ai-service-timeout.md.
+
+      - alert: PortfolioLlmProviderError
+        expr: |
+          (
+            sum(rate(portfolio_llm_requests_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_llm_requests_total[5m])), 1)
+          ) >= 0.02
+        for: 1m
+        labels:
+          service: portfolio-ai-service
+          endpoint: llm_chat_completion
+          exception_type: LLMProviderError
+          severity: P2
+          error_rate: "{{ $value }}"
+          affected_requests: "{{ $value }}"
+        annotations:
+          summary: portfolio-ai-service LLM provider calls are failing or throttled
+          description: LLM provider timeout/rate-limit/5xx observed from real model_client metrics.
+
+      - alert: PortfolioRagRetrievalEmptySpike
+        expr: |
+          (
+            sum(rate(portfolio_rag_retrieval_empty_total[5m]))
+            /
+            clamp_min(sum(rate(portfolio_rag_retrieve_total[5m])), 1)
+          ) >= 0.10
+          and
+          sum(increase(portfolio_rag_retrieval_empty_total[5m])) >= 10
+        for: 1m
+        labels:
+          service: portfolio-ai-service
+          endpoint: retrieve_knowledge
+          exception_type: RAGRetrievalEmpty
+          severity: P2
+          error_rate: "{{ $value }}"
+          affected_requests: "{{ $value }}"
+        annotations:
+          summary: portfolio RAG retrieval returned no usable citations for many requests
+          description: Qdrant and GraphRAG produced no usable context; check portfolio-rag-retrieval-empty.md.
+
+      - alert: PortfolioQdrantUnavailable
+        expr: |
+          (
+            sum(rate(portfolio_qdrant_search_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_qdrant_search_total[5m])), 1)
+          ) >= 0.02
+          or
+          histogram_quantile(0.95, sum(rate(portfolio_qdrant_search_duration_seconds_bucket[5m])) by (le)) >= 1
+        for: 1m
+        labels:
+          service: portfolio-ai-service
+          endpoint: qdrant_search
+          exception_type: QdrantUnavailable
+          severity: P1
+          error_rate: "{{ $value }}"
+          p95_latency: "{{ $value }}"
+          affected_requests: "{{ $value }}"
+        annotations:
+          summary: portfolio-ai-service Qdrant search is unavailable or slow
+          description: Vector retrieval is degraded; check portfolio-qdrant-unavailable.md.
+
+      - alert: PortfolioGraphRagFallbackFailure
+        expr: |
+          (
+            sum(rate(portfolio_neo4j_query_total{operation="graphrag_fallback",status="error"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_neo4j_query_total{operation="graphrag_fallback"}[5m])), 1)
+          ) >= 0.02
+          or
+          sum(increase(portfolio_graphrag_fallback_total{status="empty"}[5m])) >= 3
+        for: 1m
+        labels:
+          service: portfolio-ai-service
+          endpoint: graphrag_fallback
+          exception_type: GraphRagFallbackFailure
+          severity: P2
+          error_rate: "{{ $value }}"
+          affected_requests: "{{ $value }}"
+        annotations:
+          summary: portfolio GraphRAG fallback is failing or not producing graph context
+          description: Neo4j fallback query failure or empty graph context observed; check portfolio-graphrag-fallback-failure.md.
+
+      - alert: PortfolioKnowledgeIngestionFailure
+        expr: |
+          sum(increase(portfolio_kb_ingestion_failures_total[5m])) >= 1
+        for: 30s
+        labels:
+          service: ai-agent-portfolio
+          endpoint: knowledge_ingestion
+          exception_type: KnowledgeIngestionFailure
+          severity: P2
+          affected_requests: "{{ $value }}"
+        annotations:
+          summary: ai-agent-portfolio knowledge ingestion failed
+          description: Upload, script execution, embedding, Qdrant upsert, Neo4j write, or MySQL status update failed; check portfolio-knowledge-ingestion-failure.md.
+
+      - alert: PortfolioEmbeddingProviderError
+        expr: |
+          (
+            sum(rate(portfolio_embedding_requests_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_embedding_requests_total[5m])), 1)
+          ) >= 0.02
+        for: 1m
+        labels:
+          service: ai-agent-portfolio
+          endpoint: embedding
+          exception_type: EmbeddingProviderError
+          severity: P2
+          error_rate: "{{ $value }}"
+        annotations:
+          summary: portfolio embedding provider is failing
+          description: Embedding timeout/rate-limit/dimension/config failure observed in query or ingestion path.
+
+      - alert: PortfolioRedisDependencyDegraded
+        expr: |
+          (
+            sum(rate(portfolio_redis_operations_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_redis_operations_total[5m])), 1)
+          ) >= 0.02
+        for: 1m
+        labels:
+          service: ai-agent-portfolio
+          endpoint: redis_cache
+          exception_type: RedisUnavailable
+          severity: P2
+          error_rate: "{{ $value }}"
+        annotations:
+          summary: ai-agent-portfolio Redis dependency is degraded
+          description: Cache, rate-limit, dedup, blacklist, or lock operations are failing.
+
+      - alert: PortfolioDatabaseDegraded
+        expr: |
+          histogram_quantile(0.95, sum(rate(portfolio_mysql_operation_duration_seconds_bucket[5m])) by (le)) >= 1
+          or
+          (
+            sum(rate(portfolio_mysql_operations_total{status="error"}[5m]))
+            /
+            clamp_min(sum(rate(portfolio_mysql_operations_total[5m])), 1)
+          ) >= 0.02
+        for: 1m
+        labels:
+          service: ai-agent-portfolio
+          endpoint: mysql
+          exception_type: DatabaseSlowQuery
+          severity: P2
+          error_rate: "{{ $value }}"
+          p95_latency: "{{ $value }}"
+        annotations:
+          summary: ai-agent-portfolio MySQL operations are slow or failing
+          description: MySQL business operation latency/error metrics crossed threshold.

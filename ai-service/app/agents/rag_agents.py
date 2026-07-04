@@ -17,6 +17,7 @@ import uuid
 from typing import Any
 
 from app.agents.state import AgentState
+from app.core import metrics
 from app.core.model_client import model_client
 from app.core.trace_store import log_trace
 from app.prompts.prompts import load_prompt
@@ -313,6 +314,7 @@ async def run_rag_agent(initial_state: AgentState) -> AgentState:
                       for item in top
                   ]})
         if not top:
+            metrics.RAG_RETRIEVAL_EMPTY.labels("evidence_below_threshold").inc()
             status("no_evidence", "知识库没有命中可引用证据")
             state["final_answer"] = f'在知识库中未找到与“{question}”相关的文档，无法基于已有文档给出回答。'
             log_trace(state["trace_id"], state.get("customer_id"), state.get("message_id"),
@@ -385,6 +387,7 @@ async def run_rag_agent(initial_state: AgentState) -> AgentState:
                 )
 
                 if not top:
+                    metrics.RAG_RETRIEVAL_EMPTY.labels("evidence_below_threshold").inc()
                     status("no_evidence", "知识库没有命中可引用证据")
                     if state.get("kb_id"):
                         state["final_answer"] = (

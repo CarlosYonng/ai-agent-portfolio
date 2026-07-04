@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -30,6 +31,7 @@ public class RedisCacheService {
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final RedissonClient redissonClient;
+    private final PortfolioMetricsService metricsService;
 
     @Value("${redis.cache-prefix:agent:cache:}")
     private String cachePrefix;
@@ -38,9 +40,11 @@ public class RedisCacheService {
     private String lockPrefix;
 
     public RedisCacheService(RedisTemplate<String, Object> redisTemplate,
-                             RedissonClient redissonClient) {
+                             RedissonClient redissonClient,
+                             PortfolioMetricsService metricsService) {
         this.redisTemplate = redisTemplate;
         this.redissonClient = redissonClient;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -55,9 +59,12 @@ public class RedisCacheService {
 
     public void set(String key, Object value, long ttlSeconds) {
         String fullKey = cachePrefix + key;
+        long startedAt = System.nanoTime();
         try {
             redisTemplate.opsForValue().set(fullKey, value, ttlWithJitter(ttlSeconds), TimeUnit.SECONDS);
+            recordRedis("set", "success", startedAt);
         } catch (Exception e) {
+            recordRedis("set", "error", startedAt);
             log.warn("Redis set 失败 (不影响主流程): key={}", fullKey, e);
         }
     }
@@ -65,13 +72,21 @@ public class RedisCacheService {
     @SuppressWarnings("unchecked")
     public <T> T get(String key, Class<T> type) {
         String fullKey = cachePrefix + key;
+        long startedAt = System.nanoTime();
         try {
             Object val = redisTemplate.opsForValue().get(fullKey);
-            if (type.isInstance(val)) {
+            if (type == null && val != null) {
+                recordRedis("get", "success", startedAt);
                 return (T) val;
             }
+            if (type != null && type.isInstance(val)) {
+                recordRedis("get", "success", startedAt);
+                return (T) val;
+            }
+            recordRedis("get", "miss", startedAt);
             return null;
         } catch (Exception e) {
+            recordRedis("get", "error", startedAt);
             log.warn("Redis get 失败 (不影响主流程): key={}", fullKey, e);
             return null;
         }
@@ -79,20 +94,26 @@ public class RedisCacheService {
 
     public void delete(String key) {
         String fullKey = cachePrefix + key;
+        long startedAt = System.nanoTime();
         try {
             redisTemplate.delete(fullKey);
+            recordRedis("delete", "success", startedAt);
         } catch (Exception e) {
+            recordRedis("delete", "error", startedAt);
             log.warn("Redis delete 失败 (不影响主流程): key={}", fullKey, e);
         }
     }
 
     public void deleteByPattern(String pattern) {
+        long startedAt = System.nanoTime();
         try {
             var keys = redisTemplate.keys(cachePrefix + pattern);
             if (keys != null && !keys.isEmpty()) {
                 redisTemplate.delete(keys);
             }
+            recordRedis("delete_by_pattern", "success", startedAt);
         } catch (Exception e) {
+            recordRedis("delete_by_pattern", "error", startedAt);
             log.warn("Redis 批量删除失败 (不影响主流程): pattern={}", pattern, e);
         }
     }
@@ -104,11 +125,14 @@ public class RedisCacheService {
      */
     public boolean setIfAbsent(String key, Object value, long ttlSeconds) {
         String fullKey = cachePrefix + key;
+        long startedAt = System.nanoTime();
         try {
             Boolean result = redisTemplate.opsForValue()
                     .setIfAbsent(fullKey, value, ttlWithJitter(ttlSeconds), TimeUnit.SECONDS);
+            recordRedis("set_if_absent", Boolean.TRUE.equals(result) ? "success" : "exists", startedAt);
             return Boolean.TRUE.equals(result);
         } catch (Exception e) {
+            recordRedis("set_if_absent", "error", startedAt);
             log.warn("Redis setIfAbsent 失败 (降级为允许写入): key={}", fullKey, e);
             return true; // 降级：Redis 不可用时放行
         }
@@ -179,13 +203,17 @@ public class RedisCacheService {
      */
     public boolean tryAcquire(String key, int maxCount, long windowSeconds) {
         String fullKey = "agent:rate:" + key;
+        long startedAt = System.nanoTime();
         try {
             Long count = redisTemplate.opsForValue().increment(fullKey);
             if (count != null && count == 1) {
                 redisTemplate.expire(fullKey, windowSeconds, TimeUnit.SECONDS);
             }
-            return count != null && count <= maxCount;
+            boolean allowed = count != null && count <= maxCount;
+            recordRedis("rate_limit", allowed ? "success" : "limited", startedAt);
+            return allowed;
         } catch (Exception e) {
+            recordRedis("rate_limit", "error", startedAt);
             log.warn("Redis 限流失败 (放行): key={}", fullKey, e);
             return true; // 降级：Redis 挂了就放行
         }
@@ -194,11 +222,19 @@ public class RedisCacheService {
     // ==================== 分布式锁 ====================
 
     public RLock getLock(String key) {
+        long startedAt = System.nanoTime();
         try {
-            return redissonClient.getLock(lockPrefix + key);
+            RLock lock = redissonClient.getLock(lockPrefix + key);
+            recordRedis("get_lock", "success", startedAt);
+            return lock;
         } catch (Exception e) {
+            recordRedis("get_lock", "error", startedAt);
             log.warn("Redis 分布式锁不可用: key={}", key, e);
             return null;
         }
+    }
+
+    private void recordRedis(String operation, String status, long startedAt) {
+        metricsService.recordRedisOperation(operation, status, Duration.ofNanos(System.nanoTime() - startedAt));
     }
 }

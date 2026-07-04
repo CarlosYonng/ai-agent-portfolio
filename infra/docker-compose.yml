@@ -22,6 +22,7 @@ services:
       LOG_PATH: ${LOG_PATH:-/app/logs}
       KB_INGEST_SCRIPT_PATH: ${KB_INGEST_SCRIPT_PATH:-/app/scripts/ingest_docs.py}
       KB_INGEST_MYSQL_DSN: ${KB_INGEST_MYSQL_DSN:-mysql://agent:agent123@host.docker.internal:3306/agentdb}
+      PORTFOLIO_DEMO_FAULTS_ENABLED: ${PORTFOLIO_DEMO_FAULTS_ENABLED:-false}
     volumes:
       - ../data/backend/uploads:/app/data/uploads
       - ../logs/backend:/app/logs
@@ -56,6 +57,8 @@ services:
       DASHSCOPE_TOKEN: ${DASHSCOPE_TOKEN:-}
       LOG_PATH: ${AI_SERVICE_LOG_PATH:-/app/logs}
       LOG_LEVEL: ${AI_SERVICE_LOG_LEVEL:-INFO}
+      PORTFOLIO_DEMO_FAULTS_ENABLED: ${PORTFOLIO_DEMO_FAULTS_ENABLED:-false}
+      PORTFOLIO_DEMO_AI_SLEEP_MS: ${PORTFOLIO_DEMO_AI_SLEEP_MS:-65000}
     volumes:
       - ../logs/ai-service:/app/logs
 
@@ -72,3 +75,44 @@ services:
       - "3000:80"
     volumes:
       - ../logs/frontend:/var/log/nginx
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: agent-prometheus
+    depends_on:
+      backend-java:
+        condition: service_started
+      ai-service:
+        condition: service_started
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ../ops/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../ops/monitoring/prometheus/rules/portfolio-alerts.yml:/etc/prometheus/rules/portfolio-alerts.yml:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: agent-grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INCIDENT_COPILOT_GRAFANA_WEBHOOK_URL: ${INCIDENT_COPILOT_GRAFANA_WEBHOOK_URL:-http://host.docker.internal:8080/api/alerts/grafana}
+    volumes:
+      - ../ops/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../ops/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  prometheus_data:
+  grafana_data:

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json as jsonlib
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,7 @@ import asyncio
 
 import httpx
 
+from app.core import metrics
 from app.core.settings import settings
 
 
@@ -237,6 +239,7 @@ class ModelClient:
         headers = {"Authorization": f"Bearer {settings.llm_token.get_secret_value()}"}
         last_error: Exception | None = None
         for attempt in range(3):
+            started_at = time.perf_counter()
             try:
                 async with httpx.AsyncClient(timeout=60) as client:
                     response = await client.post(
@@ -245,14 +248,34 @@ class ModelClient:
                         json=payload,
                     )
                     response.raise_for_status()
+                    metrics.LLM_REQUESTS.labels("chat_completion", settings.llm_model or "unknown", "success", "none").inc()
+                    metrics.LLM_DURATION.labels("chat_completion", settings.llm_model or "unknown").observe(time.perf_counter() - started_at)
                     return response.json()
             except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as error:
                 last_error = error
+                error_label = self._llm_error_type(error)
+                metrics.LLM_REQUESTS.labels("chat_completion", settings.llm_model or "unknown", "error", error_label).inc()
+                metrics.LLM_DURATION.labels("chat_completion", settings.llm_model or "unknown").observe(time.perf_counter() - started_at)
                 if isinstance(error, httpx.HTTPStatusError) and error.response.status_code < 500:
                     raise
                 if attempt < 2:
                     await asyncio.sleep(0.5 * (2 ** attempt))
         raise RuntimeError(f"LLM API 连续重试失败: {last_error}")
+
+    @staticmethod
+    def _llm_error_type(error: Exception) -> str:
+        if isinstance(error, httpx.TimeoutException):
+            return "timeout"
+        if isinstance(error, httpx.HTTPStatusError):
+            status = error.response.status_code
+            if status == 429:
+                return "rate_limited"
+            if status >= 500:
+                return "server_error"
+            return f"http_{status}"
+        if isinstance(error, httpx.TransportError):
+            return "transport_error"
+        return metrics.error_type(error)
 
     def _parse_chat_response(self, data: dict[str, Any]) -> ChatResponse:
         """解析 LLM 响应，提取文本或 tool_call。"""

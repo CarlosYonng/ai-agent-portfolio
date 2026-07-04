@@ -25,6 +25,19 @@
 
 AI 服务现在默认接真实模型服务。未配置 `LLM_TOKEN`、`LLM_BASE_URL`、`LLM_MODEL` 时会明确失败，避免把离线结果当成真实业务答案。
 
+## 监控与告警
+
+当前分支接入 Prometheus + Grafana，并可把真实业务告警推送到相邻项目
+`ai-incident-copilot` 的 `/api/alerts/grafana`。详见：
+
+- `docs/observability.md`
+- `docs/incident-copilot-integration.md`
+
+Docker 启动后访问：
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3001`
+
 ## 本地调试和 Docker 运行
 
 本地调试时，Java、Python 和前端都运行在宿主机，配置读取 `.env`，服务地址使用 `localhost`。这种方式适合在 IDE 里给 Java Controller/Service、Python Agent 节点打断点。

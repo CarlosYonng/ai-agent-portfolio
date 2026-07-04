@@ -1,0 +1,46 @@
+{
+  "uid": "ai-agent-portfolio-dependencies",
+  "title": "AI Agent Portfolio Dependencies",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "tags": ["ai-agent-portfolio", "dependencies"],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Qdrant Search Error Rate",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_qdrant_search_total{status=\"error\"}[5m])) / clamp_min(sum(rate(portfolio_qdrant_search_total[5m])), 1)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Neo4j GraphRAG Error Rate",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_neo4j_query_total{status=\"error\"}[5m])) / clamp_min(sum(rate(portfolio_neo4j_query_total[5m])), 1)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Provider Error Rate",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_llm_requests_total{status=\"error\"}[5m])) / clamp_min(sum(rate(portfolio_llm_requests_total[5m])), 1)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Embedding Provider Error Rate",
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_embedding_requests_total{status=\"error\"}[5m])) / clamp_min(sum(rate(portfolio_embedding_requests_total[5m])), 1)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis Operation Error Rate",
+      "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_redis_operations_total{status=\"error\"}[5m])) / clamp_min(sum(rate(portfolio_redis_operations_total[5m])), 1)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Knowledge Ingestion Failures",
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(increase(portfolio_kb_ingestion_failures_total[5m])) by (stage, error_type)"}]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: incident-copilot-grafana-webhook
+    group_by:
+      - alertname
+      - service
+      - endpoint
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 30m

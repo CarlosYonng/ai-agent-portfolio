@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
 
+from app.core import metrics
 from app.core.settings import settings
 
 
@@ -20,9 +22,18 @@ async def embed_text(text: str) -> list[float]:
     """
 
     provider = settings.embedding_provider.lower()
-    if provider in {"dashscope", "openai_compatible", "openai"}:
-        return await _openai_compatible_embedding(text)
-    raise ValueError(f"Unsupported EMBEDDING_PROVIDER: {settings.embedding_provider}，请配置真实 embedding 服务。")
+    started_at = time.perf_counter()
+    try:
+        if provider in {"dashscope", "openai_compatible", "openai"}:
+            result = await _openai_compatible_embedding(text)
+            metrics.EMBEDDING_REQUESTS.labels("embed_text", provider, "success", "none").inc()
+            return result
+        raise ValueError(f"Unsupported EMBEDDING_PROVIDER: {settings.embedding_provider}，请配置真实 embedding 服务。")
+    except Exception as error:
+        metrics.EMBEDDING_REQUESTS.labels("embed_text", provider or "unknown", "error", metrics.error_type(error)).inc()
+        raise
+    finally:
+        metrics.EMBEDDING_DURATION.labels("embed_text", provider or "unknown").observe(time.perf_counter() - started_at)
 
 
 async def _openai_compatible_embedding(text: str) -> list[float]:

@@ -1,0 +1,13 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: incident-copilot-grafana-webhook
+    receivers:
+      - uid: incident_copilot_webhook
+        type: webhook
+        settings:
+          url: ${INCIDENT_COPILOT_GRAFANA_WEBHOOK_URL}
+          httpMethod: POST
+          title: ai-agent-portfolio alert
+          message: Real Grafana alert generated from ai-agent-portfolio metrics.

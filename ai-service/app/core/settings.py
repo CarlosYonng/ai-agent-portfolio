@@ -34,5 +34,7 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_model: str = "text-embedding-v4"
     embedding_dimensions: int = 1024
+    portfolio_demo_faults_enabled: bool = False
+    portfolio_demo_ai_sleep_ms: int = 0
 
 settings = Settings()

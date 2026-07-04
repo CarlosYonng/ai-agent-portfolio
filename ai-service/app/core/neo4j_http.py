@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 import urllib.request
 from typing import Any
+
+from app.core import metrics
 
 
 class Neo4jHttpClient:
@@ -27,6 +30,8 @@ class Neo4jHttpClient:
     def query(self, cypher: str, parameters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """执行 Cypher 查询，并返回扁平化 row。"""
 
+        started_at = time.perf_counter()
+        operation = "graphrag_fallback"
         payload = {
             "statements": [
                 {
@@ -46,12 +51,18 @@ class Neo4jHttpClient:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except OSError:
+            metrics.NEO4J_QUERY_TOTAL.labels(operation, "error", "GraphRagFallbackFailure").inc()
+            metrics.NEO4J_QUERY_DURATION.labels(operation).observe(time.perf_counter() - started_at)
             return []
 
         if result.get("errors"):
+            metrics.NEO4J_QUERY_TOTAL.labels(operation, "error", "GraphRagFallbackFailure").inc()
+            metrics.NEO4J_QUERY_DURATION.labels(operation).observe(time.perf_counter() - started_at)
             return []
         statements = result.get("results", [])
         if not statements:
+            metrics.NEO4J_QUERY_TOTAL.labels(operation, "success", "none").inc()
+            metrics.NEO4J_QUERY_DURATION.labels(operation).observe(time.perf_counter() - started_at)
             return []
 
         columns = statements[0].get("columns", [])
@@ -59,5 +70,6 @@ class Neo4jHttpClient:
         for row in statements[0].get("data", []):
             values = row.get("row", [])
             rows.append(dict(zip(columns, values, strict=False)))
+        metrics.NEO4J_QUERY_TOTAL.labels(operation, "success", "none").inc()
+        metrics.NEO4J_QUERY_DURATION.labels(operation).observe(time.perf_counter() - started_at)
         return rows
-

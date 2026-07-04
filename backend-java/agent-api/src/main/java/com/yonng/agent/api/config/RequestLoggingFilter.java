@@ -1,5 +1,6 @@
 package com.yonng.agent.api.config;
 
+import com.yonng.agent.service.system.PortfolioMetricsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.UUID;
 
 /**
@@ -28,6 +30,11 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(RequestLoggingFilter.class);
     private static final String TRACE_ID_HEADER = "X-Trace-Id";
+    private final PortfolioMetricsService metricsService;
+
+    public RequestLoggingFilter(PortfolioMetricsService metricsService) {
+        this.metricsService = metricsService;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -43,6 +50,7 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             putAuthenticatedUser();
             long durationMs = System.currentTimeMillis() - startedAt;
             int status = response.getStatus();
+            metricsService.recordJavaHttpRequest(normalizeEndpoint(request.getRequestURI()), request.getMethod(), status, Duration.ofMillis(durationMs));
             if (status >= 500) {
                 log.error("http_request_completed status={} durationMs={}", status, durationMs);
             } else if (status >= 400) {
@@ -52,6 +60,31 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             }
             MDC.clear();
         }
+    }
+
+    private static String normalizeEndpoint(String uri) {
+        if (uri == null || uri.isBlank()) {
+            return "unknown";
+        }
+        if (uri.matches("^/api/chat/sessions/[^/]+/messages$")) {
+            return "/api/chat/sessions/{sessionId}/messages";
+        }
+        if (uri.matches("^/api/kb/[^/]+/documents/upload$")) {
+            return "/api/kb/{kbId}/documents/upload";
+        }
+        if (uri.matches("^/api/kb/documents/[^/]+/retry$")) {
+            return "/api/kb/documents/{id}/retry";
+        }
+        if (uri.matches("^/api/kb/documents/[^/]+(/download)?$")) {
+            return uri.endsWith("/download") ? "/api/kb/documents/{id}/download" : "/api/kb/documents/{id}";
+        }
+        if (uri.matches("^/api/kb/[^/]+/documents$")) {
+            return "/api/kb/{kbId}/documents";
+        }
+        if (uri.matches("^/api/kb/[^/]+$")) {
+            return "/api/kb/{id}";
+        }
+        return uri;
     }
 
     private void putMdc(HttpServletRequest request, String traceId) {

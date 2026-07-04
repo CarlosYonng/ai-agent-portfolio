@@ -12,4 +12,12 @@ echo "[smoke] check ai-service"
 curl -fsS http://localhost:8000/api/health
 
 echo
+echo "[smoke] check backend-java prometheus metrics"
+curl -fsS http://localhost:8080/actuator/prometheus | grep -q "portfolio_java_http"
+
+echo
+echo "[smoke] check ai-service prometheus metrics"
+curl -fsS http://localhost:8000/metrics | grep -q "portfolio_ai_http"
+
+echo
 echo "[smoke] done"

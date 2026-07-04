@@ -1,0 +1,40 @@
+{
+  "uid": "ai-agent-portfolio-overview",
+  "title": "AI Agent Portfolio Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "tags": ["ai-agent-portfolio", "overview"],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Java API QPS",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_java_http_requests_total[1m])) by (endpoint)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Java API Error Rate",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_java_http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(portfolio_java_http_requests_total[5m])), 1)"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Java API p95 Latency",
+      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum(rate(portfolio_java_http_request_duration_seconds_bucket[5m])) by (le, endpoint))"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Java -> AI Service Duration",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum(rate(portfolio_chat_ai_service_duration_seconds_bucket[5m])) by (le))"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Chat Requests",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "sum(rate(portfolio_chat_requests_total[1m])) by (status)"}]
+    }
+  ]
+}

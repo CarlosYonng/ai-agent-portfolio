@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
+
+from app.core import metrics
 
 
 class QdrantHttpClient:
@@ -21,6 +24,7 @@ class QdrantHttpClient:
     def search(self, collection: str, vector: list[float], limit: int, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """执行向量检索。"""
 
+        started_at = time.perf_counter()
         must_conditions = []
         for key, value in filters.items():
             if value is None:
@@ -36,10 +40,16 @@ class QdrantHttpClient:
         if must_conditions:
             payload["filter"] = {"must": must_conditions}
 
-        result = self._request("POST", f"/collections/{collection}/points/search", payload)
-        if not result:
-            return []
-        return result.get("result", [])
+        try:
+            result = self._request("POST", f"/collections/{collection}/points/search", payload)
+            if result is None:
+                metrics.QDRANT_SEARCH_TOTAL.labels("error", "QdrantUnavailable").inc()
+                return []
+            rows = result.get("result", [])
+            metrics.QDRANT_SEARCH_TOTAL.labels("success", "none").inc()
+            return rows
+        finally:
+            metrics.QDRANT_SEARCH_DURATION.observe(time.perf_counter() - started_at)
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None) -> dict[str, Any] | None:
         """发送 HTTP 请求，连接失败时返回 None。"""

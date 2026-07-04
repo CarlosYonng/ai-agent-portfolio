@@ -5,6 +5,7 @@ import com.yonng.agent.dto.knowledge.DocumentDownloadInfo;
 import com.yonng.agent.dto.knowledge.KnowledgeDocumentResponse;
 import com.yonng.agent.exception.BusinessException;
 import com.yonng.agent.exception.ErrorCode;
+import com.yonng.agent.service.system.PortfolioMetricsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
@@ -15,6 +16,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,11 +49,14 @@ public class DocumentIngestionService {
 
     private final Environment environment;
     private final KnowledgeBaseService knowledgeBaseService;
+    private final PortfolioMetricsService metricsService;
 
     public DocumentIngestionService(Environment environment,
-                                    KnowledgeBaseService knowledgeBaseService) {
+                                    KnowledgeBaseService knowledgeBaseService,
+                                    PortfolioMetricsService metricsService) {
         this.environment = environment;
         this.knowledgeBaseService = knowledgeBaseService;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -62,21 +67,30 @@ public class DocumentIngestionService {
                                                      String title,
                                                      String originalFilename,
                                                      InputStream inputStream) {
-        String safeFilename = sanitizeFilename(originalFilename);
-        validateSupportedFile(safeFilename);
-        Path storedFile = storeUploadedFile(kbId, safeFilename, inputStream);
-        log.info("document_upload_received kbId={} customerId={} originalFilename={} storedFile={}",
-                kbId, customerId, safeFilename, storedFile);
+        long startedAt = System.nanoTime();
+        try {
+            String safeFilename = sanitizeFilename(originalFilename);
+            validateSupportedFile(safeFilename);
+            Path storedFile = storeUploadedFile(kbId, safeFilename, inputStream);
+            log.info("document_upload_received kbId={} customerId={} originalFilename={} storedFile={}",
+                    kbId, customerId, safeFilename, storedFile);
 
-        DocumentCreateRequest request = new DocumentCreateRequest();
-        request.setKbId(kbId);
-        request.setTitle(normalizeTitle(title, safeFilename));
-        request.setSourceType(sourceTypeFor(safeFilename));
-        request.setSourceUri(storedFile.toString());
-        Long docId = knowledgeBaseService.createDocument(request, customerId);
-        knowledgeBaseService.updateDocumentIngestProgress(docId, "PENDING", "UPLOADED", 5, 0, null, "");
-        runIngestInBackground(kbId, customerId, docId, request.getTitle(), storedFile, "document_upload_indexed");
-        return knowledgeBaseService.getDocument(docId);
+            DocumentCreateRequest request = new DocumentCreateRequest();
+            request.setKbId(kbId);
+            request.setTitle(normalizeTitle(title, safeFilename));
+            request.setSourceType(sourceTypeFor(safeFilename));
+            request.setSourceUri(storedFile.toString());
+            Long docId = knowledgeBaseService.createDocument(request, customerId);
+            knowledgeBaseService.updateDocumentIngestProgress(docId, "PENDING", "UPLOADED", 5, 0, null, "");
+            metricsService.recordKbUpload("accepted");
+            metricsService.recordKbIngestion("upload", "success", Duration.ofNanos(System.nanoTime() - startedAt), "none");
+            runIngestInBackground(kbId, customerId, docId, request.getTitle(), storedFile, "document_upload_indexed");
+            return knowledgeBaseService.getDocument(docId);
+        } catch (RuntimeException error) {
+            metricsService.recordKbUpload("failed");
+            metricsService.recordKbIngestion("upload", "error", Duration.ofNanos(System.nanoTime() - startedAt), error.getClass().getSimpleName());
+            throw error;
+        }
     }
 
     /**
@@ -110,14 +124,18 @@ public class DocumentIngestionService {
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 knowledgeBaseService.updateDocumentIngestProgress(docId, "FAILED", "FAILED", null, null, null, "入库任务被中断");
+                metricsService.recordKbIngestion("queue", "error", Duration.ZERO, "InterruptedException");
                 return;
             }
             try {
+                long startedAt = System.nanoTime();
                 runIngestScript(kbId, customerId, docId, title, storedFile);
                 knowledgeBaseService.updateDocumentIngestProgress(docId, "INDEXED", "INDEXED", 100, null, null, "");
+                metricsService.recordKbIngestion("knowledge_ingestion", "success", Duration.ofNanos(System.nanoTime() - startedAt), "none");
                 log.info("{} docId={} kbId={} customerId={} file={}", successEvent, docId, kbId, customerId, storedFile);
             } catch (RuntimeException ex) {
                 knowledgeBaseService.updateDocumentIngestProgress(docId, "FAILED", "FAILED", null, null, null, summarizeError(ex));
+                metricsService.recordKbIngestion("knowledge_ingestion", "error", Duration.ZERO, ex.getClass().getSimpleName());
                 log.warn("文档自动入库失败 docId={} file={}", docId, storedFile, ex);
             } finally {
                 INGEST_SEMAPHORE.release();

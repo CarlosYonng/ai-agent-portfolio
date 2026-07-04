@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
+from app.core import metrics
 from app.core.embedding import embed_text
 from app.core.entity_extractor import extract_entities
 from app.core.neo4j_http import Neo4jHttpClient
@@ -50,33 +52,59 @@ class HybridRetriever:
         4. 都没有则返回空列表，由 Agent 生成未命中回答。
         """
 
+        started_at = time.perf_counter()
         customer_id = filters.get("customer_id")
         kb_id = filters.get("kb_id")
-        vector = await embed_text(query)
-        vector_filters = {}
-        if customer_id and customer_id > 0:
-            vector_filters["customer_id"] = customer_id
-        if kb_id is not None:
-            vector_filters["kb_id"] = kb_id
-        # limit=8: 无 reranker 时，Qdrant 的排序就是最终排序。
-        # 前 8 个已经是余弦距离最接近的，超过 8 个取 top-k 也轮不到它们。
-        # 如果将来上了 reranker，再把 limit 提到 20 以上——reranker 会重新排序，
-        # 靠后的候选有可能被捞回来。
-        qdrant_results = self.qdrant.search(
-            COLLECTION_NAME,
-            vector=vector,
-            limit=8,
-            filters=vector_filters,
-        )
-        if qdrant_results:
-            return [self._from_qdrant(point) for point in qdrant_results]
+        try:
+            if settings.portfolio_demo_faults_enabled and "__demo_empty_rag__" in query:
+                # 仅本地演示启用：稳定触发 RAG 空召回告警，不污染真实用户路径。
+                metrics.RAG_RETRIEVE_TOTAL.labels("empty").inc()
+                metrics.RAG_RETRIEVAL_EMPTY.labels("demo_fault").inc()
+                metrics.RAG_RETRIEVED_CHUNKS.observe(0)
+                return []
 
-        graph_customer_id = int(customer_id) if customer_id and customer_id > 0 else None
-        graph_results = self._graph_search(query, graph_customer_id, int(kb_id) if kb_id is not None else None)
-        if graph_results:
-            return graph_results
+            vector = await embed_text(query)
+            vector_filters = {}
+            if customer_id and customer_id > 0:
+                vector_filters["customer_id"] = customer_id
+            if kb_id is not None:
+                vector_filters["kb_id"] = kb_id
+            # limit=8: 无 reranker 时，Qdrant 的排序就是最终排序。
+            # 前 8 个已经是余弦距离最接近的，超过 8 个取 top-k 也轮不到它们。
+            # 如果将来上了 reranker，再把 limit 提到 20 以上——reranker 会重新排序，
+            # 靠后的候选有可能被捞回来。
+            qdrant_results = self.qdrant.search(
+                COLLECTION_NAME,
+                vector=vector,
+                limit=8,
+                filters=vector_filters,
+            )
+            if qdrant_results:
+                rows = [self._from_qdrant(point) for point in qdrant_results]
+                metrics.RAG_RETRIEVE_TOTAL.labels("qdrant_hit").inc()
+                metrics.RAG_RETRIEVED_CHUNKS.observe(len(rows))
+                return rows
 
-        return []
+            graph_customer_id = int(customer_id) if customer_id and customer_id > 0 else None
+            graph_results = self._graph_search(query, graph_customer_id, int(kb_id) if kb_id is not None else None)
+            if graph_results:
+                metrics.GRAPHRAG_FALLBACK_TOTAL.labels("success").inc()
+                metrics.GRAPH_CONTEXT_HIT_TOTAL.labels("hit").inc()
+                metrics.RAG_RETRIEVE_TOTAL.labels("graph_hit").inc()
+                metrics.RAG_RETRIEVED_CHUNKS.observe(len(graph_results))
+                return graph_results
+
+            metrics.GRAPHRAG_FALLBACK_TOTAL.labels("empty").inc()
+            metrics.GRAPH_CONTEXT_HIT_TOTAL.labels("miss").inc()
+            metrics.RAG_RETRIEVE_TOTAL.labels("empty").inc()
+            metrics.RAG_RETRIEVAL_EMPTY.labels("no_qdrant_or_graph_context").inc()
+            metrics.RAG_RETRIEVED_CHUNKS.observe(0)
+            return []
+        except Exception:
+            metrics.RAG_RETRIEVE_TOTAL.labels("error").inc()
+            raise
+        finally:
+            metrics.RAG_RETRIEVE_DURATION.observe(time.perf_counter() - started_at)
 
     def _from_qdrant(self, point: dict[str, Any]) -> dict[str, Any]:
         """把 Qdrant point 转成 Agent 统一证据格式。"""

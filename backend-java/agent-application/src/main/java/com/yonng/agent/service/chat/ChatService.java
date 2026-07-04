@@ -16,11 +16,15 @@ import com.yonng.agent.mapper.chat.ChatSessionMapper;
 import com.yonng.agent.service.system.ChatCacheService;
 import com.yonng.agent.service.system.ContentCheckService;
 import com.yonng.agent.service.system.HistorySchemaService;
+import com.yonng.agent.service.system.PortfolioMetricsService;
 import com.yonng.agent.service.system.RequestDedupService;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.ResourceAccessException;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +48,7 @@ public class ChatService {
     private final ContentCheckService contentCheckService;
     private final ChatCacheService chatCacheService;
     private final RequestDedupService requestDedupService;
+    private final PortfolioMetricsService metricsService;
 
     public ChatService(ChatSessionMapper chatSessionMapper,
                        ChatMessageMapper chatMessageMapper,
@@ -52,7 +57,8 @@ public class ChatService {
                        HistorySchemaService historySchemaService,
                        ContentCheckService contentCheckService,
                        ChatCacheService chatCacheService,
-                       RequestDedupService requestDedupService) {
+                       RequestDedupService requestDedupService,
+                       PortfolioMetricsService metricsService) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
         this.aiRestClient = aiRestClient;
@@ -61,6 +67,7 @@ public class ChatService {
         this.contentCheckService = contentCheckService;
         this.chatCacheService = chatCacheService;
         this.requestDedupService = requestDedupService;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -95,6 +102,7 @@ public class ChatService {
         aiRequest.put("question", request.getQuestion());
         aiRequest.put("message_history", messageHistory);
 
+        long aiStartedAt = System.nanoTime();
         try {
             String jsonBody = objectMapper.writeValueAsString(aiRequest);
             ChatResponse response = aiRestClient.post()
@@ -113,9 +121,16 @@ public class ChatService {
             insertMessage(customerId, sessionId, "assistant", safeResponse.getAnswer(), safeResponse.getTraceId(), citationsJson);
             // 写入完成后刷新 Redis 缓存，下次读取时直接从缓存命中
             chatCacheService.getHistory(sessionId);
+            metricsService.recordAiServiceCall(Duration.ofNanos(System.nanoTime() - aiStartedAt), "success", "none");
+            metricsService.recordChatRequest("success");
             return safeResponse;
         } catch (JsonProcessingException e) {
+            metricsService.recordChatRequest("serialization_error");
             throw new BusinessException(ErrorCode.SYSTEM_REQUEST_SERIALIZATION_FAILED, "序列化 AI 请求失败");
+        } catch (RestClientException e) {
+            metricsService.recordAiServiceCall(Duration.ofNanos(System.nanoTime() - aiStartedAt), "error", classifyAiServiceError(e));
+            metricsService.recordChatRequest("downstream_error");
+            throw e;
         }
     }
 
@@ -208,7 +223,14 @@ public class ChatService {
         session.setUserId(userId);
         session.setKbId(request.getKbId());
         session.setTitle(titleFromQuestion(request.getQuestion()));
-        chatSessionMapper.insert(session);
+        long startedAt = System.nanoTime();
+        try {
+            chatSessionMapper.insert(session);
+            metricsService.recordMysqlOperation("chat_session_insert", "success", Duration.ofNanos(System.nanoTime() - startedAt));
+        } catch (RuntimeException error) {
+            metricsService.recordMysqlOperation("chat_session_insert", "error", Duration.ofNanos(System.nanoTime() - startedAt));
+            throw error;
+        }
         return Objects.requireNonNull(session.getId());
     }
 
@@ -220,7 +242,14 @@ public class ChatService {
         message.setContent(content == null ? "" : content);
         message.setTraceId(traceId);
         message.setCitations(citations);
-        chatMessageMapper.insert(message);
+        long startedAt = System.nanoTime();
+        try {
+            chatMessageMapper.insert(message);
+            metricsService.recordMysqlOperation("chat_message_insert", "success", Duration.ofNanos(System.nanoTime() - startedAt));
+        } catch (RuntimeException error) {
+            metricsService.recordMysqlOperation("chat_message_insert", "error", Duration.ofNanos(System.nanoTime() - startedAt));
+            throw error;
+        }
         return Objects.requireNonNull(message.getId());
     }
 
@@ -233,5 +262,18 @@ public class ChatService {
         }
         // 会话标题只取前 30 个字符，避免长问题撑开会话列表 UI。
         return question.length() > 30 ? question.substring(0, 30) : question;
+    }
+
+    private static String classifyAiServiceError(Throwable error) {
+        Throwable cursor = error;
+        while (cursor != null) {
+            String name = cursor.getClass().getSimpleName().toLowerCase();
+            String message = cursor.getMessage() == null ? "" : cursor.getMessage().toLowerCase();
+            if (cursor instanceof ResourceAccessException || name.contains("timeout") || message.contains("timeout") || message.contains("timed out")) {
+                return "AIServiceTimeout";
+            }
+            cursor = cursor.getCause();
+        }
+        return "AIServiceError";
     }
 }

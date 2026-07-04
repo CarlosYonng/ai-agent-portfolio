@@ -99,6 +99,12 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
 
+        <!-- 业务层直接记录聊天、入库、Redis 等真实链路指标。 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+
         <!-- @PostConstruct 等 Jakarta 注解。 -->
         <dependency>
             <groupId>jakarta.annotation</groupId>

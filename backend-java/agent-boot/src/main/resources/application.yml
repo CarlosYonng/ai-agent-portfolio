@@ -52,7 +52,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      service: ai-agent-portfolio
+    distribution:
+      percentiles-histogram:
+        portfolio.chat.ai.service.duration: true
+        portfolio.kb.ingestion.duration: true
+        portfolio.redis.operation.duration: true
+        portfolio.java.http.request.duration: true
 
 agent:
   ai-service-base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
@@ -77,6 +86,7 @@ agent:
   neo4j-database: ${NEO4J_DATABASE:neo4j}
   index-cleanup-connect-timeout-ms: ${INDEX_CLEANUP_CONNECT_TIMEOUT_MS:3000}
   index-cleanup-read-timeout-ms: ${INDEX_CLEANUP_READ_TIMEOUT_MS:10000}
+  demo-faults-enabled: ${PORTFOLIO_DEMO_FAULTS_ENABLED:false}
 
 jwt:
   secret: ${JWT_SECRET:dev-secret-key-change-in-production-minimum-256-bits}
