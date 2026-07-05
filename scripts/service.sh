@@ -11,8 +11,8 @@
 #
 # Services:
 #   all      - 所有服务 (默认)
-#   ai       - AI 服务 (端口 8000)
-#   java     - Java 后端 (端口 8080)
+#   ai       - AI 服务 (端口：.env 的 AI_SERVICE_PORT，默认 8000)
+#   java     - Java 后端 (端口：.env 的 JAVA_PORT，默认 8080)
 #   frontend - 前端 (端口 5173)
 #
 # 示例:
@@ -29,7 +29,8 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
 
 # ---------- Python ----------
-PYTHON="/opt/miniconda3/bin/python"
+# 默认使用 ai-service 自己的虚拟环境，避免系统 Python 和项目依赖不一致。
+AI_SERVICE_PYTHON_DEFAULT="$PROJECT_DIR/ai-service/.venv/bin/python"
 
 # ---------- 日志文件 ----------
 LOG_DIR="${PROJECT_DIR}/logs"
@@ -94,15 +95,21 @@ load_env() {
   set +a
 }
 
+# 从 .env 读取服务端口，带默认值。
+# Docker 单独部署端口不在脚本管理范围，这些端口只影响本地启动。
+load_env
+AI_SERVICE_PORT="${AI_SERVICE_PORT:-8000}"
+JAVA_PORT="${JAVA_PORT:-8080}"
+
 # ---------- 服务管理函数 ----------
 
-# ----- AI 服务 (端口 8000) -----
+# ----- AI 服务 (端口：.env 的 AI_SERVICE_PORT，默认 8000) -----
 status_ai() {
   local pid
-  pid=$(first_pid_by_port 8000)
+  pid=$(first_pid_by_port "$AI_SERVICE_PORT")
   if [ -n "$pid" ]; then
-    if curl -sf http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-      info "AI 服务 (端口 8000, PID $pid)  — $(curl -s http://127.0.0.1:8000/api/health)"
+    if curl -sf "http://127.0.0.1:$AI_SERVICE_PORT/api/health" >/dev/null 2>&1; then
+      info "AI 服务 (端口 $AI_SERVICE_PORT, PID $pid)  — $(curl -s "http://127.0.0.1:$AI_SERVICE_PORT/api/health")"
     else
       warn "AI 服务进程存在 (PID $pid) 但未响应"
     fi
@@ -112,18 +119,34 @@ status_ai() {
 }
 
 start_ai() {
-  section "启动 AI 服务 (端口 8000)"
-  if [ -n "$(pid_by_port 8000)" ]; then
+  section "启动 AI 服务 (端口 $AI_SERVICE_PORT)"
+  if [ -n "$(pid_by_port "$AI_SERVICE_PORT")" ]; then
     warn "AI 服务已在运行，跳过 (使用 restart 或先 stop)"
     return 0
   fi
   load_env
+  # load_env 会覆盖脚本顶部默认值；再次读取确保 .env 中的 AI_SERVICE_PORT 生效
+  AI_SERVICE_PORT="${AI_SERVICE_PORT:-8000}"
+  local python_bin="${AI_SERVICE_PYTHON:-$AI_SERVICE_PYTHON_DEFAULT}"
+  if [ ! -x "$python_bin" ]; then
+    error "AI Python 不存在或不可执行: $python_bin"
+    error "请先创建虚拟环境，或在 .env 中设置 AI_SERVICE_PYTHON"
+    return 1
+  fi
+  if ! "$python_bin" -c "import prometheus_client" >/dev/null 2>&1; then
+    warn "AI 服务依赖不完整，正在安装 requirements.txt"
+    "$python_bin" -m pip install -r "$PROJECT_DIR/ai-service/requirements.txt"
+  fi
+  local reload_arg=""
+  if [ "${AI_SERVICE_RELOAD:-false}" = "true" ]; then
+    reload_arg="--reload"
+  fi
   cd "$PROJECT_DIR/ai-service"
-  nohup "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload \
+  nohup "$python_bin" -m uvicorn app.main:app --host 127.0.0.1 --port "$AI_SERVICE_PORT" $reload_arg \
     > "$LOG_DIR/ai-service.log" 2>&1 &
   local pid=$!
   sleep 3
-  if wait_port_listen 8000 10; then
+  if wait_port_listen "$AI_SERVICE_PORT" 10; then
     info "AI 服务已启动 (PID $pid)"
   else
     error "AI 服务启动失败，查看日志: $LOG_DIR/ai-service.log"
@@ -134,11 +157,11 @@ start_ai() {
 stop_ai() {
   section "停止 AI 服务"
   local pids
-  pids=$(pid_by_port 8000)
+  pids=$(pid_by_port "$AI_SERVICE_PORT")
   if [ -n "$pids" ]; then
     # uvicorn --reload 会有一个 reloader 父进程和一个 worker 子进程，全部杀掉
     echo "$pids" | xargs kill 2>/dev/null || true
-    if wait_port_free 8000 10; then
+    if wait_port_free "$AI_SERVICE_PORT" 10; then
       info "AI 服务已停止"
     else
       warn "AI 服务未正常停止，强制终止"
@@ -155,13 +178,13 @@ restart_ai() {
   start_ai
 }
 
-# ----- Java 后端 (端口 8080) -----
+# ----- Java 后端 (端口：.env 的 JAVA_PORT，默认 8080) -----
 status_java() {
   local pid
-  pid=$(first_pid_by_port 8080)
+  pid=$(first_pid_by_port "$JAVA_PORT")
   if [ -n "$pid" ]; then
-    if curl -sf http://127.0.0.1:8080/actuator/health >/dev/null 2>&1; then
-      info "Java 后端 (端口 8080, PID $pid)  — $(curl -s http://127.0.0.1:8080/actuator/health)"
+    if curl -sf "http://127.0.0.1:$JAVA_PORT/actuator/health" >/dev/null 2>&1; then
+      info "Java 后端 (端口 $JAVA_PORT, PID $pid)  — $(curl -s "http://127.0.0.1:$JAVA_PORT/actuator/health")"
     else
       warn "Java 进程存在 (PID $pid) 但未响应"
     fi
@@ -171,22 +194,26 @@ status_java() {
 }
 
 start_java() {
-  section "启动 Java 后端 (端口 8080)"
-  if [ -n "$(pid_by_port 8080)" ]; then
-    error "端口 8080 已有 Java 后端进程，不能直接 start 覆盖。请使用 restart java，避免旧 Jar 继续接请求。"
+  section "启动 Java 后端 (端口 $JAVA_PORT)"
+  if [ -n "$(pid_by_port "$JAVA_PORT")" ]; then
+    error "端口 $JAVA_PORT 已有 Java 后端进程，不能直接 start 覆盖。请使用 restart java，避免旧 Jar 继续接请求。"
     return 1
   fi
   load_env
+  # load_env 会覆盖脚本顶部默认值；再次读取确保 .env 中的 JAVA_PORT 生效
+  JAVA_PORT="${JAVA_PORT:-8080}"
   cd "$PROJECT_DIR/backend-java"
+  # 通过命令行 --server.port 覆盖 application.yml 的默认值，优先级最高
+  export JAVA_PORT
   # 包迁移/重命名后必须 clean，避免 target/classes 里残留旧 Controller 或 DTO。
   mvn -q -pl agent-boot -am -DskipTests clean package
-  nohup java -jar agent-boot/target/agent-boot-1.1.0.jar \
+  nohup java -jar agent-boot/target/agent-boot-1.1.0.jar --server.port="$JAVA_PORT" \
     > "$LOG_DIR/java-backend.log" 2>&1 &
   local pid=$!
   info "Java 编译启动中 (PID $pid)，首次需下载依赖约 1-2 分钟..."
   local waited=0
   while [ $waited -lt 90 ]; do
-    if curl -sf http://127.0.0.1:8080/actuator/health >/dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:$JAVA_PORT/actuator/health" >/dev/null 2>&1; then
       info "Java 后端已启动 (耗时 ${waited}s)"
       return 0
     fi
@@ -200,10 +227,10 @@ start_java() {
 stop_java() {
   section "停止 Java 后端"
   local pids
-  pids=$(pid_by_port 8080)
+  pids=$(pid_by_port "$JAVA_PORT")
   if [ -n "$pids" ]; then
     echo "$pids" | xargs kill 2>/dev/null || true
-    if wait_port_free 8080 15; then
+    if wait_port_free "$JAVA_PORT" 15; then
       info "Java 后端已停止"
     else
       warn "Java 后端未正常停止，强制终止"
@@ -344,8 +371,8 @@ show_status_summary() {
   echo ""
   header "访问入口"
   echo -e "  前端页面 ${GREEN}http://127.0.0.1:5173${NC}"
-  echo -e "  AI 服务  ${GREEN}http://127.0.0.1:8000/docs${NC}"
-  echo -e "  Java 后端 ${GREEN}http://127.0.0.1:8080/actuator/health${NC}"
+  echo -e "  AI 服务  ${GREEN}http://127.0.0.1:$AI_SERVICE_PORT/docs${NC}"
+  echo -e "  Java 后端 ${GREEN}http://127.0.0.1:$JAVA_PORT/actuator/health${NC}"
   echo ""
   header "日志文件"
   echo -e "  ${YELLOW}$LOG_DIR/ai-service.log${NC}"

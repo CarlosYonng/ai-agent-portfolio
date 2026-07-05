@@ -1,14 +1,15 @@
 # Observability for ai-agent-portfolio
 
-这套监控链路基于项目真实业务路径，不新增对外 SSE 告警：
+这套监控链路基于项目真实业务路径，不新增对外 SSE 告警。Prometheus 和 Grafana
+已独立到相邻仓库 `monitor-server`，本项目只负责暴露指标端点：
 
 ```text
 POST /api/chat/messages
   -> Java ChatService
   -> Python /api/agent/ask
   -> LLM / Embedding / Qdrant / Neo4j
-  -> Prometheus
-  -> Grafana alert webhook
+  -> monitor-server Prometheus
+  -> monitor-server Grafana alert webhook
   -> ai-incident-copilot /api/alerts/grafana
 ```
 
@@ -29,16 +30,24 @@ cd ../ai-agent-portfolio
 make up
 ```
 
+最后启动监控项目：
+
+```bash
+cd ../monitor-server
+cp .env.example .env
+docker compose --env-file .env up -d
+```
+
 访问入口：
 
-- Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3001`，默认 `admin/admin`
 - Java metrics: `http://localhost:8080/actuator/prometheus`
 - AI metrics: `http://localhost:8000/metrics`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3001`，默认 `admin/admin`
 
 ## 环境变量
 
-Docker 容器推送宿主机上的 Incident Copilot 时使用：
+`monitor-server` Docker 容器推送宿主机上的 Incident Copilot 时使用：
 
 ```env
 INCIDENT_COPILOT_BASE_URL=http://host.docker.internal:8080/api

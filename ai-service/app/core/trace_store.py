@@ -18,7 +18,7 @@ logger = logging.getLogger("agent-trace")
 
 def log_trace(
     trace_id: str,
-    customer_id: int,
+    customer_id: int | None,
     message_id: int | None,
     node_name: str,
     input_summary: str,

@@ -33,7 +33,7 @@ public class ChatController {
     @PostMapping("/messages")
     public ApiResult<ChatResponse> ask(@Valid @RequestBody ChatRequest request,
                                         @CurrentUser UserInfo user) {
-        return ApiResult.ok(chatService.ask(request, user.getCustomerId(), user.getUserId()));
+        return ApiResult.ok(chatService.ask(request, user.getCustomerId(), user.getUserId(), RoleAccess.isInternal(user)));
     }
 
     /**

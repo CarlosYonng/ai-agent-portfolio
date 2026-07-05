@@ -1,5 +1,6 @@
 # Docker Compose 是本项目的一键运行入口。
 # Makefile 默认通过 --env-file .env.docker 传入配置；.env 用于本地 debug。
+# Docker 单独部署，端口直接改本文件；本地开发端口通过 .env 的 AI_SERVICE_PORT / JAVA_PORT 联动。
 
 services:
   backend-java:
@@ -7,6 +8,7 @@ services:
       context: ../backend-java
     container_name: agent-backend-java
     ports:
+      # Docker Compose 单独部署，端口直接写死；改端口直接改这里。
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
@@ -75,44 +77,3 @@ services:
       - "3000:80"
     volumes:
       - ../logs/frontend:/var/log/nginx
-
-  prometheus:
-    image: prom/prometheus:v2.55.1
-    container_name: agent-prometheus
-    depends_on:
-      backend-java:
-        condition: service_started
-      ai-service:
-        condition: service_started
-    ports:
-      - "9090:9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
-    volumes:
-      - ../ops/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../ops/monitoring/prometheus/rules/portfolio-alerts.yml:/etc/prometheus/rules/portfolio-alerts.yml:ro
-      - prometheus_data:/prometheus
-
-  grafana:
-    image: grafana/grafana:11.4.0
-    container_name: agent-grafana
-    depends_on:
-      prometheus:
-        condition: service_started
-    ports:
-      - "3001:3000"
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      INCIDENT_COPILOT_GRAFANA_WEBHOOK_URL: ${INCIDENT_COPILOT_GRAFANA_WEBHOOK_URL:-http://host.docker.internal:8080/api/alerts/grafana}
-    volumes:
-      - ../ops/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../ops/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana_data:/var/lib/grafana
-
-volumes:
-  prometheus_data:
-  grafana_data:

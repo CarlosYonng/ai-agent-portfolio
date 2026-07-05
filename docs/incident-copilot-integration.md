@@ -2,7 +2,7 @@
 
 ## Webhook
 
-Grafana contact point 推送到：
+Grafana contact point 已独立到相邻仓库 `monitor-server`，推送到：
 
 ```text
 ${INCIDENT_COPILOT_GRAFANA_WEBHOOK_URL}
@@ -91,13 +91,18 @@ cd ../ai-agent-portfolio
 make up
 curl http://localhost:8080/actuator/prometheus
 curl http://localhost:8000/metrics
+
+cd ../monitor-server
+cp .env.example .env
+docker compose --env-file .env up -d
+curl http://localhost:9090/-/ready
 ```
 
 触发真实链路：
 
 1. 调用 `POST /api/chat/messages`，确认 Java 和 Python metrics 增长。
 2. 上传或重试文档入库，确认 `portfolio_kb_ingestion_*` 有数据。
-3. 打开 Grafana `http://localhost:3001` 查看 Overview、Chat/RAG、Dependencies dashboard。
+3. 打开 `monitor-server` 的 Grafana `http://localhost:3001` 查看 Overview、Chat/RAG、Dependencies dashboard。
 4. 触发至少两个告警，建议 `PortfolioAiServiceTimeout` 和 `PortfolioRagRetrievalEmptySpike`。
 5. 查询 Incident Copilot：
 

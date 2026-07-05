@@ -27,13 +27,19 @@ AI 服务现在默认接真实模型服务。未配置 `LLM_TOKEN`、`LLM_BASE_U
 
 ## 监控与告警
 
-当前分支接入 Prometheus + Grafana，并可把真实业务告警推送到相邻项目
+当前项目只保留指标暴露端点；Prometheus + Grafana 已独立到相邻项目
+`monitor-server`，由它抓取本项目指标并把真实业务告警推送到
 `ai-incident-copilot` 的 `/api/alerts/grafana`。详见：
 
 - `docs/observability.md`
 - `docs/incident-copilot-integration.md`
 
-Docker 启动后访问：
+本项目 Docker 启动后暴露：
+
+- Java metrics: `http://localhost:8080/actuator/prometheus`
+- AI metrics: `http://localhost:8000/metrics`
+
+监控服务访问入口在 `../monitor-server`：
 
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3001`

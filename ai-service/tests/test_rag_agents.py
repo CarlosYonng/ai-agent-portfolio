@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from app.agents import rag_agents
+from app.schemas.chat import AgentAskRequest
 
 
 class FakeRetriever:
@@ -21,6 +22,18 @@ class FakeRetriever:
 class FakeEmptyRetriever:
     async def retrieve(self, query, filters=None):
         return []
+
+
+class CapturingRetriever:
+    def __init__(self):
+        self.filters = None
+
+    async def retrieve(self, query, filters=None):
+        self.filters = dict(filters or {})
+        return [
+            {"chunk_id": "c1", "doc_id": "d1", "title": "test",
+             "score": 0.9, "text": f"query={query}"},
+        ]
 
 
 class FakeModelClient:
@@ -47,6 +60,19 @@ def test_build_messages_includes_system_prompt():
     }))
     assert msgs[0]["role"] == "system"
     assert "企业知识库问答助手" in msgs[0]["content"]
+
+
+def test_agent_ask_request_allows_platform_global_customer_id_none():
+    request = AgentAskRequest(
+        customer_id=None,
+        user_id=1,
+        session_id=1,
+        message_id=1,
+        kb_id=None,
+        question="全局检索",
+    )
+
+    assert request.customer_id is None
 
 
 def test_build_messages_includes_current_question():
@@ -268,6 +294,28 @@ def test_run_rag_agent_fast_path(monkeypatch):
     assert "检索证据" in state["final_answer"]
     # 只调了 1 次 LLM（快速通道直接回答），不是 2 次（ReAct 先 tool_call 再回答）
     assert fake_client.call_count == 1
+
+
+def test_run_rag_agent_fast_path_all_tenant_keeps_customer_filter_none(monkeypatch):
+    """平台管理员全局 RAG：customer_id=None 需要透传到检索器，由检索器跳过租户过滤。"""
+    from app.core.model_client import ChatResponse
+
+    fake_client = FakeModelClient([
+        ChatResponse(content="全局检索回答。"),
+    ])
+    retriever = CapturingRetriever()
+    monkeypatch.setattr(rag_agents, "model_client", fake_client)
+    monkeypatch.setattr(rag_agents, "hybrid_retriever", retriever)
+    monkeypatch.setattr(rag_agents, "log_trace", lambda *a, **kw: None)
+
+    state = asyncio.run(rag_agents.run_rag_agent({
+        "customer_id": None, "user_id": 1, "session_id": 1,
+        "kb_id": 1,
+        "question": "跨租户查一下知识库",
+    }))
+
+    assert state["final_answer"] == "全局检索回答。"
+    assert retriever.filters == {"kb_id": 1, "customer_id": None}
 
 
 def test_run_rag_agent_fast_path_no_evidence(monkeypatch):
