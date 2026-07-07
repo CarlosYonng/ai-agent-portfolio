@@ -9,6 +9,7 @@
 - `infra/`: Docker Compose and database initialization assets.
 - `datasets/`: Evaluation fixtures and importable knowledge documents.
 - `scripts/`: Document ingestion, smoke test, and local service scripts.
+- `ops/monitoring/`: Prometheus and Grafana dashboards, alert rules, and provisioning.
 - `docs/`: Architecture, module, and operation guides.
 
 ## Common Commands
@@ -22,6 +23,7 @@
 - Frontend build: `cd frontend && npm run build`
 - Ingest documents: `make ingest-a`
 - Smoke test: `make smoke`
+- Alert webhook smoke test: `make smoke-alert`
 
 ## Comment Style
 
@@ -38,6 +40,9 @@
 - Frontend code stays in `frontend/`; use React + Vite and keep all browser API calls relative to `/api`.
 - Local debug uses `.env` with `localhost`; Docker Compose uses `.env.docker` with service names.
 - In Docker, frontend static files are served by Nginx and `/api` is proxied to `backend-java:8080`.
+- Current chat UI uses REST JSON through `POST /api/chat/messages`; do not document or add `/api/chat/messages/stream` unless the stream endpoint is actually implemented.
+- Current online retrieval order is Qdrant semantic search, then Neo4j GraphRAG fallback, then `NO_EVIDENCE`. MySQL stores metadata, sessions, messages, status, and trace data; it is not the current online keyword fallback.
+- Observability lives in this repository through Java `/actuator/prometheus`, Python `/metrics`, and Grafana webhook integration with adjacent `ai-incident-copilot`. Do not describe a local MCP diagnosis server as implemented here.
 - Keep Java module boundaries clear: API controllers in `agent-api`, application services and DTOs in `agent-application`, persistence and external clients in `agent-infrastructure`, domain entities in `agent-domain`, and boot wiring in `agent-boot`.
 - **Degradation policy**: Missing LLM credentials and failed vector writes must **fail loudly** — only explicitly requested dry-run/test paths may skip external writes. No silent "mock model" fallback.
 - When adding new endpoints or scripts, include one concise doc comment describing the request flow and where it fits in the RAG/Agent architecture.

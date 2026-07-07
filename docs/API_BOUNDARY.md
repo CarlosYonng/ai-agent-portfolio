@@ -9,6 +9,7 @@
 | `com.yonng.agent.api.external.*` | 浏览器 / React 管理台 | `/api/auth/**`、`/api/kb/**`、`/api/chat/**`、`/api/admin/**`、`/api/traces/**` | 用户可见业务操作，必须走登录身份、角色和客户隔离 |
 | `com.yonng.agent.api.internal.*` | 受控脚本 / 内部服务 / 后台补偿任务 | `/api/internal/**` | 机器到机器调用，例如文档入库状态回写；当前先由平台管理员 JWT 保护，后续可演进为 service token |
 | `com.yonng.agent.api.ops.*` | smoke test / 探活 / 接口文档工具 | `/api/health`、`/api/docs/**` | 运维和工具接口，不表达业务流程 |
+| Spring Actuator | Prometheus / 运维平台 | `/actuator/prometheus` | Java 侧 metrics 暴露入口，不承载业务写入 |
 | `com.yonng.agent.api.config.*` | Spring Security / MVC 配置 | 无业务 URL | 鉴权、当前用户解析、Redis、请求日志等横切配置 |
 
 ## 2. 当前接口归类
@@ -20,9 +21,10 @@
 | `/api/admin/customers/**` | `external.admin.CustomerController` | 平台管理台 | 管理客户空间 |
 | `/api/kb/**` | `external.knowledge.KnowledgeBaseController` | 知识库管理台 | 用户可见知识库、文档、上传、下载、删除 |
 | `PATCH /api/internal/kb/documents/{id}/status` | `internal.knowledge.KnowledgeDocumentInternalController` | 导入脚本 / 内部补偿任务 | 文档状态回写；新内部调用应使用该路径 |
-| `/api/chat/**` | `external.chat.ChatController` | RAG 控制台 | Java 负责鉴权和会话历史，Agent 推理由服务层转发给 Python AI 服务 |
+| `POST /api/chat/messages`、`GET /api/chat/sessions`、`GET /api/chat/sessions/{sessionId}/messages` | `external.chat.ChatController` | RAG 控制台 | Java 负责鉴权和会话历史，Agent 推理由服务层转发给 Python AI 服务；当前对外聊天接口为 REST JSON |
 | `/api/traces/**` | `external.trace.TraceController` | Trace 面板 | 查看 Agent 执行轨迹和统计 |
 | `/api/health`、`/api/docs/**` | `ops.*` | 运维 / 工具 | 健康检查与 OpenAPI 导出 |
+| `/actuator/prometheus` | Spring Actuator | Prometheus | Java 指标采集；Python 指标由 AI 服务 `/metrics` 暴露 |
 
 ## 3. 新增接口规则
 
