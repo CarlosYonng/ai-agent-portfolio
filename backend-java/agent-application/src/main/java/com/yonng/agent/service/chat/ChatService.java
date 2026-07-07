@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.yonng.agent.domain.chat.ChatMessage;
 import com.yonng.agent.domain.chat.ChatSession;
+import com.yonng.agent.domain.knowledge.KnowledgeBase;
 import com.yonng.agent.dto.chat.ChatRequest;
 import com.yonng.agent.dto.chat.ChatMessageResponse;
 import com.yonng.agent.dto.chat.ChatResponse;
@@ -13,6 +14,7 @@ import com.yonng.agent.exception.BusinessException;
 import com.yonng.agent.exception.ErrorCode;
 import com.yonng.agent.mapper.chat.ChatMessageMapper;
 import com.yonng.agent.mapper.chat.ChatSessionMapper;
+import com.yonng.agent.mapper.knowledge.KnowledgeBaseMapper;
 import com.yonng.agent.service.system.ChatCacheService;
 import com.yonng.agent.service.system.ContentCheckService;
 import com.yonng.agent.service.system.HistorySchemaService;
@@ -42,6 +44,7 @@ public class ChatService {
 
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final RestClient aiRestClient;
     private final ObjectMapper objectMapper;
     private final HistorySchemaService historySchemaService;
@@ -52,6 +55,7 @@ public class ChatService {
 
     public ChatService(ChatSessionMapper chatSessionMapper,
                        ChatMessageMapper chatMessageMapper,
+                       KnowledgeBaseMapper knowledgeBaseMapper,
                        RestClient aiRestClient,
                        ObjectMapper objectMapper,
                        HistorySchemaService historySchemaService,
@@ -61,6 +65,7 @@ public class ChatService {
                        PortfolioMetricsService metricsService) {
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
+        this.knowledgeBaseMapper = knowledgeBaseMapper;
         this.aiRestClient = aiRestClient;
         this.objectMapper = objectMapper;
         this.historySchemaService = historySchemaService;
@@ -74,7 +79,7 @@ public class ChatService {
      * 发送问题到 Agent。支持多轮对话：自动读取历史消息传递给 AI 服务。
      * 对话历史通过 Redis 缓存加速，相同问题 5 秒内自动去重。
      */
-    public ChatResponse ask(ChatRequest request, Long customerId, Long userId) {
+    public ChatResponse ask(ChatRequest request, Long customerId, Long userId, boolean crossTenantRag) {
         // 内容安全审核
         contentCheckService.check(request.getQuestion(), "RAG 问答");
 
@@ -83,6 +88,7 @@ public class ChatService {
             throw new BusinessException(ErrorCode.RATE_LIMIT_EXCEEDED, "请勿重复提交相同问题");
         }
 
+        Long ragCustomerId = resolveRagCustomerId(request, customerId, crossTenantRag);
         Long sessionId = ensureSession(request, customerId, userId);
 
         // 读取历史消息（优先 Redis 缓存，缓存 miss 时回源 MySQL）
@@ -94,7 +100,7 @@ public class ChatService {
         Long messageId = insertMessage(customerId, sessionId, "user", request.getQuestion(), null, null);
 
         Map<String, Object> aiRequest = new HashMap<>();
-        aiRequest.put("customer_id", customerId);
+        aiRequest.put("customer_id", ragCustomerId);
         aiRequest.put("user_id", userId);
         aiRequest.put("session_id", sessionId);
         aiRequest.put("message_id", messageId);
@@ -251,6 +257,30 @@ public class ChatService {
             throw error;
         }
         return Objects.requireNonNull(message.getId());
+    }
+
+    /**
+     * 平台角色的会话仍归属 PLATFORM 客户，但 RAG 检索需要按目标知识库真实租户或全平台范围执行。
+     */
+    private Long resolveRagCustomerId(ChatRequest request, Long userCustomerId, boolean crossTenantRag) {
+        Long kbId = request.getKbId();
+        if (!crossTenantRag) {
+            if (kbId != null) {
+                KnowledgeBase knowledgeBase = knowledgeBaseMapper.selectById(kbId);
+                if (knowledgeBase == null || !Objects.equals(userCustomerId, knowledgeBase.getCustomerId())) {
+                    throw new BusinessException(ErrorCode.KB_NOT_FOUND);
+                }
+            }
+            return userCustomerId;
+        }
+        if (kbId == null) {
+            return null;
+        }
+        KnowledgeBase knowledgeBase = knowledgeBaseMapper.selectById(kbId);
+        if (knowledgeBase == null) {
+            throw new BusinessException(ErrorCode.KB_NOT_FOUND);
+        }
+        return knowledgeBase.getCustomerId();
     }
 
     /**

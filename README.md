@@ -31,6 +31,31 @@
 
 本项目默认接真实 LLM 和 embedding 服务。未配置 `LLM_TOKEN`、`LLM_BASE_URL`、`LLM_MODEL` 等凭证时，AI 调用会明确失败，避免把 mock/offline 结果当成真实业务答案。
 
+### 本地调试和 Docker 运行
+
+本地调试时，Java、Python 和前端都运行在宿主机，配置读取 `.env`，服务地址使用 `localhost`。这种方式适合在 IDE 里给 Java Controller/Service、Python Agent 节点打断点。
+
+Docker 运行时，Compose 读取 `.env.docker`，服务之间使用 `backend-java`、`ai-service` 这类容器服务名。前端由 Nginx 提供静态资源，并把 `/api` 反向代理到 Java 后端。
+
+### 监控与告警
+
+当前项目只保留指标暴露端点；Prometheus + Grafana 已独立到相邻项目
+`monitor-server`，由它抓取本项目指标并把真实业务告警推送到
+`ai-incident-copilot` 的 `/api/alerts/grafana`。详见：
+
+- `docs/observability.md`
+- `docs/incident-copilot-integration.md`
+
+本项目 Docker 启动后暴露：
+
+- Java metrics: `http://localhost:8080/actuator/prometheus`
+- AI metrics: `http://localhost:8000/metrics`
+
+监控服务访问入口在 `../monitor-server`：
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3001`
+
 ```bash
 # Docker 完整运行
 make up

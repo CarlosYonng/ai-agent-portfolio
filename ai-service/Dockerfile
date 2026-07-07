@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 再复制业务代码。
 COPY app ./app
 
+# Docker Compose 单独部署，端口改 docker-compose.yml 里的 ai-service.ports 即可。
 EXPOSE 8000
 
 # uvicorn 提供 FastAPI HTTP 服务。

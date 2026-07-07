@@ -9,7 +9,7 @@ from typing import Any, Optional, TypedDict
 class AgentState(TypedDict, total=False):
     """贯穿 Agent ReAct 循环的状态。"""
 
-    customer_id: int
+    customer_id: Optional[int]
     user_id: int
     session_id: int
     message_id: Optional[int]

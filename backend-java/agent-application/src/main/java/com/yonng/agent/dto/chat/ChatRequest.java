@@ -6,14 +6,14 @@ import jakarta.validation.constraints.NotNull;
 /**
  * 聊天请求 DTO。
  *
- * <p>customerId/userId 由 JWT 自动注入，不再由前端传递。</p>
+ * <p>customerId/userId 由 JWT 自动注入，不再由前端传递；平台角色的检索租户由后端按角色和 kbId 计算。</p>
  */
 public class ChatRequest {
 
     /** 为空时自动创建新会话；不为空时追加到已有会话。 */
     private Long sessionId;
 
-    /** 当前问答限定的知识库；为空时按租户全局知识检索。 */
+    /** 当前问答限定的知识库；为空时客户用户搜本租户，平台用户搜全平台。 */
     private Long kbId;
 
     /** 用户原始问题，会被 AI 服务改写为检索 query。 */

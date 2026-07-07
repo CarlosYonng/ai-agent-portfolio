@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 class AgentAskRequest(BaseModel):
     """Java 后端发送给 AI 服务的请求。"""
 
-    customer_id: int
+    customer_id: Optional[int] = None
     user_id: int
     session_id: int
     message_id: Optional[int] = None

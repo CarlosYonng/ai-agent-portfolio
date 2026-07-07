@@ -9,9 +9,13 @@ status:
 	@docker compose -f $(COMPOSE_FILE) ps --format "table {{.Name}}\t{{.Status}}"
 	@echo ""
 	@echo "=== HTTP 服务健康检查 ==="
-	@printf "  backend-java  : "; curl -sf http://localhost:8080/actuator/health | grep -q UP && echo "UP  (port 8080)" || echo "DOWN"
-	@printf "  ai-service    : "; curl -sf http://localhost:8000/docs > /dev/null 2>&1 && echo "UP  (port 8000)" || echo "DOWN"
-	@printf "  frontend      : "; curl -sf http://localhost:3000/ > /dev/null 2>&1 && echo "UP  (port 3000)" || echo "DOWN"
+	@AI_SERVICE_PORT=$$(grep -v '^#' .env | grep -E '^AI_SERVICE_PORT=' | cut -d= -f2); \
+	AI_SERVICE_PORT=$${AI_SERVICE_PORT:-8000}; \
+	JAVA_PORT=$$(grep -v '^#' .env | grep -E '^JAVA_PORT=' | cut -d= -f2); \
+	JAVA_PORT=$${JAVA_PORT:-8080}; \
+	printf "  backend-java  : "; curl -sf http://localhost:$$JAVA_PORT/actuator/health | grep -q UP && echo "UP  (port $$JAVA_PORT)" || echo "DOWN"; \
+	printf "  ai-service    : "; curl -sf http://localhost:$$AI_SERVICE_PORT/docs > /dev/null 2>&1 && echo "UP  (port $$AI_SERVICE_PORT)" || echo "DOWN"; \
+	printf "  frontend      : "; curl -sf http://localhost:3000/ > /dev/null 2>&1 && echo "UP  (port 3000)" || echo "DOWN"
 
 up:
 	docker compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE) up -d
@@ -25,8 +29,12 @@ logs:
 infra-up:
 	@echo "中间件已独立到 ai-agent-infra-stack，请在 ../ai-agent-infra-stack 执行: docker compose up -d"
 
+monitor-up:
+	@echo "监控服务已独立到 monitor-server，请在 ../monitor-server 执行: docker compose up -d"
+
+# 本地 AI 服务。端口通过 .env 的 AI_SERVICE_PORT 配置（默认 8000）。
 run-ai:
-	cd ai-service && export $$(grep -v '^#' ../.env | xargs) && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+	cd ai-service && export $$(grep -v '^#' ../.env | xargs) && python -m uvicorn app.main:app --host 127.0.0.1 --port $${AI_SERVICE_PORT:-8000} --reload
 
 run-java:
 	./scripts/service.sh restart java

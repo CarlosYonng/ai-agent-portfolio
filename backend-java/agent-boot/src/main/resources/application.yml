@@ -1,8 +1,9 @@
 # Spring Boot 配置。
 # docker profile 会从环境变量读取 AI 服务地址，便于 docker-compose 内部调用。
+# Java 后端端口：通过 JAVA_PORT 环境变量或下方默认值决定。docker-compose 中端口映射需与此保持一致。
 
 server:
-  port: 8080
+  port: ${JAVA_PORT:8080}
   shutdown: graceful
 
 redis:

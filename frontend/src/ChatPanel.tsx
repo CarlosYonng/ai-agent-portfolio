@@ -40,6 +40,7 @@ export default function ChatPanel({
     traceId?: string;
     messageId?: number;
   }>>([]);
+  const isInternalRole = INTERNAL_ROLES.includes(role ?? "");
   const currentSpace = spaces.find((space) => space.id === selectedKb);
 
   async function refreshSessions(filters?: { keyword?: string; startDate?: string; endDate?: string }) {
@@ -60,10 +61,10 @@ export default function ChatPanel({
     listKnowledgeBases()
       .then((items) => {
         setSpaces(items);
-        if (items[0]) setSelectedKb(items[0].id);
+        setSelectedKb(isInternalRole ? undefined : items[0]?.id);
       })
       .catch(() => setSpaces([]));
-  }, []);
+  }, [isInternalRole]);
 
   useEffect(() => { refreshSessions(); }, []);
 
@@ -196,7 +197,7 @@ export default function ChatPanel({
                     if (activeSessionId) newSession();
                   }}
                 >
-                  {INTERNAL_ROLES.includes(role ?? "") && <option value={0}>客户全局</option>}
+                  {isInternalRole && <option value={0}>全局知识库</option>}
                   {spaces.map((space) => (
                     <option key={space.id} value={space.id}>{space.name}</option>
                   ))}
